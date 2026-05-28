@@ -1,0 +1,29 @@
+@page "/auth/logout"
+@inject XN1Lab.Platform.Identity.Abstractions.IAccountIdentityProvider AuthenticationService
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Logout</PageTitle>
+
+<div class="ui raised very padded text segment">
+    <div class="ui active inline loader"></div>
+    <span>Signing out...</span>
+</div>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await JSRuntime.InvokeVoidAsync("xn1financeAuthStorage.removeItem", "xn1finance.auth.returnUrl");
+        await JSRuntime.InvokeVoidAsync("localStorage.removeItem", "xn1.accountScope.activeAccountId");
+        await AuthenticationService.SignOutAsync();
+        if (AuthenticationService is not XN1Lab.Platform.Identity.Keycloak.Abstractions.IKeycloakAuthenticationService)
+        {
+            NavigationManager.NavigateTo("/finance/portfolio-management", forceLoad: true);
+        }
+    }
+}

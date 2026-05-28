@@ -1,0 +1,521 @@
+@page "/finance/portfolio-management/scenario"
+@page "/finance/portfolio/scenario"
+@attribute [Authorize]
+@using XN1Lab.Platform.Api.Exceptions
+@using XN1Lab.Platform.CoreServices.Contracts.PortfolioAnalytics
+@inject IPortfolioAnalyticsService PortfolioAnalyticsService
+@inject PortfolioAnalyticsPermissionState Permissions
+
+<PageTitle>Scenario Lab</PageTitle>
+
+<WorkspacePage>
+    <WorkspacePageContent>
+        <PortfolioAnalyticsModuleTabs />
+
+        <div class="ui stackable grid">
+            <div class="five wide column">
+                <div class="ui segment">
+                    <div class="ui small header">
+                        <i class="sliders horizontal icon"></i>
+                        Scenario Lab
+                    </div>
+
+                    @if (!CanUseScenarioLab)
+                    {
+                        <div class="ui warning message">
+                            <i class="lock icon"></i>
+                            Portfolio read, macro data read, and scenario run permissions are required.
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(LoadError))
+                    {
+                        <div class="ui warning message">@LoadError</div>
+                    }
+
+                    <div class="ui form">
+                        <div class="field">
+                            <label>Portfolio</label>
+                            <select class="ui fluid selection"
+                                    @bind="SelectedPortfolioIdText"
+                                    @bind:after="OnPortfolioSelectionChangedAsync"
+                                    disabled="@(!CanUseScenarioLab || IsLoading)"
+                                    title="Portfolio">
+                                <option value="">Select portfolio</option>
+                                @foreach (var portfolio in Portfolios)
+                                {
+                                    <option value="@portfolio.Id.ToString()">@portfolio.Name (@portfolio.BaseCurrency)</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="field">
+                            <label>Macro release</label>
+                            <select class="ui fluid selection"
+                                    @bind="SelectedReleaseEventIdText"
+                                    @bind:after="OnReleaseSelectionChanged"
+                                    disabled="@(!CanUseScenarioLab || IsLoading)"
+                                    title="Macro release">
+                                <option value="">Select release</option>
+                                @foreach (var item in MacroEvents)
+                                {
+                                    <option value="@item.ReleaseEventId.ToString()">@FormatReleaseOption(item)</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="field">
+                            <label>Scenario name</label>
+                            <InputText class="ui input" @bind-Value="ScenarioName" disabled="@(!CanUseScenarioLab)" />
+                        </div>
+
+                        <div class="field">
+                            <label>Shock percent</label>
+                            <InputNumber class="ui input" @bind-Value="ShockPercent" disabled="@(!CanUseScenarioLab)" />
+                        </div>
+
+                        <button type="button"
+                                disabled="@IsRunDisabled"
+                                class="@($"ui primary {(IsRunning ? "loading disabled" : string.Empty)} button")"
+                                @onclick="RunScenarioAsync">
+                            <i class="play icon"></i>
+                            Run scenario
+                        </button>
+
+                        <button type="button"
+                                disabled="@(!CanUseScenarioLab || IsLoading)"
+                                class="@($"ui basic {(IsLoading ? "loading disabled" : string.Empty)} button")"
+                                @onclick="LoadInitialDataAsync">
+                            <i class="sync icon"></i>
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+
+                @if (Exposure is not null)
+                {
+                    <div class="ui segment">
+                        <div class="ui small header">
+                            <i class="chart pie icon"></i>
+                            Exposure
+                        </div>
+                        <div class="ui relaxed divided list">
+                            <div class="item">
+                                <div class="content">
+                                    <div class="header">@Exposure.TotalEstimatedValue.ToString("N2") @Exposure.BaseCurrency</div>
+                                    <div class="description">@Exposure.HoldingCount holdings</div>
+                                </div>
+                            </div>
+                            @foreach (var bucket in Exposure.SectorExposure.Take(5))
+                            {
+                                <div class="item">
+                                    <div class="right floated content">@bucket.Percent.ToString("N2")%</div>
+                                    <div class="content">@bucket.Name</div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="eleven wide column">
+                <div class="ui segment">
+                    @if (IsLoading)
+                    {
+                        <div class="ui active inline loader"></div>
+                        <span>Loading scenario inputs...</span>
+                    }
+                    else if (Result is null)
+                    {
+                        <div class="ui three stackable cards">
+                            <div class="ui card">
+                                <div class="content">
+                                    <i class="briefcase right floated icon"></i>
+                                    <div class="header">@Portfolios.Count</div>
+                                    <div class="meta">Portfolios</div>
+                                </div>
+                            </div>
+                            <div class="ui card">
+                                <div class="content">
+                                    <i class="calendar alternate outline right floated icon"></i>
+                                    <div class="header">@MacroEvents.Count</div>
+                                    <div class="meta">Macro events</div>
+                                </div>
+                            </div>
+                            <div class="ui card">
+                                <div class="content">
+                                    <i class="chart line right floated icon"></i>
+                                    <div class="header">@((Exposure?.TotalEstimatedValue ?? 0m).ToString("N2"))</div>
+                                    <div class="meta">@((Exposure?.BaseCurrency ?? "USD")) valuation</div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="ui four stackable cards">
+                            <div class="ui card">
+                                <div class="content">
+                                    <i class="wallet right floated icon"></i>
+                                    <div class="header">@CurrentScenarioValue.ToString("N2")</div>
+                                    <div class="meta">@ScenarioCurrency current value</div>
+                                </div>
+                            </div>
+                            <div class="@BuildProfitLossCardClass(Result.EstimatedPortfolioImpactValue)">
+                                <div class="content">
+                                    <i class="dollar sign right floated icon"></i>
+                                    <div class="header">@FormatSignedMoney(Result.EstimatedPortfolioImpactValue)</div>
+                                    <div class="meta">@ScenarioCurrency total estimated P/L</div>
+                                </div>
+                            </div>
+                            <div class="ui card">
+                                <div class="content">
+                                    <i class="chart line right floated icon"></i>
+                                    <div class="header">@ProjectedScenarioValue.ToString("N2")</div>
+                                    <div class="meta">@ScenarioCurrency projected value</div>
+                                </div>
+                            </div>
+                            <div class="ui card">
+                                <div class="content">
+                                    <i class="bolt right floated icon"></i>
+                                    <div class="header">@FormatPercent(Result.EstimatedPortfolioImpactPercent)</div>
+                                    <div class="meta">@Result.MacroSeriesName impact</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="ui small header">Sector impact</div>
+                        <table class="ui celled compact table">
+                            <thead>
+                                <tr>
+                                    <th>Exposure</th>
+                                    <th class="right aligned">Weight</th>
+                                    <th class="right aligned">Value</th>
+                                    <th class="right aligned">Sensitivity</th>
+                                    <th class="right aligned">Impact %</th>
+                                    <th class="right aligned">Estimated P/L</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var impact in Result.Impacts)
+                                {
+                                    <tr>
+                                        <td>
+                                            <strong>@impact.ExposureName</strong>
+                                            <div class="ui tiny text">@impact.ExposureKey</div>
+                                        </td>
+                                        <td class="right aligned">@impact.ExposurePercent.ToString("N2")%</td>
+                                        <td class="right aligned">@impact.EstimatedValue.ToString("N2")</td>
+                                        <td class="right aligned">@impact.Sensitivity.ToString("N4")</td>
+                                        <td class="@ImpactCellClass(impact.EstimatedImpactPercent)">@FormatPercent(impact.EstimatedImpactPercent)</td>
+                                        <td class="@ImpactCellClass(impact.EstimatedImpactValue)">@FormatSignedMoney(impact.EstimatedImpactValue)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+
+                        @if (Result.Warnings.Count > 0)
+                        {
+                            <div class="ui small header">Warnings</div>
+                            <div class="ui relaxed divided list">
+                                @foreach (var warning in Result.Warnings)
+                                {
+                                    <div class="item">
+                                        <i class="@WarningIconClass(warning.Severity)"></i>
+                                        <div class="content">
+                                            <div class="header">@warning.Code</div>
+                                            <div class="description">@warning.Message</div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(RunError))
+                    {
+                        <div class="ui warning message">@RunError</div>
+                    }
+                </div>
+            </div>
+        </div>
+    </WorkspacePageContent>
+</WorkspacePage>
+
+@code {
+    [SupplyParameterFromQuery(Name = "releaseEventId")]
+    public Guid? QueryReleaseEventId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "portfolioId")]
+    public Guid? QueryPortfolioId { get; set; }
+
+    private IReadOnlyList<PortfolioContract> Portfolios { get; set; } = Array.Empty<PortfolioContract>();
+    private IReadOnlyList<MacroCalendarEventContract> MacroEvents { get; set; } = Array.Empty<MacroCalendarEventContract>();
+    private PortfolioExposureSnapshotContract? Exposure { get; set; }
+    private PortfolioScenarioRunResultContract? Result { get; set; }
+    private Guid? SelectedPortfolioId { get; set; }
+    private Guid? SelectedReleaseEventId { get; set; }
+    private string? ScenarioName { get; set; }
+    private decimal? ShockPercent { get; set; }
+    private string? LoadError { get; set; }
+    private string? RunError { get; set; }
+    private bool IsLoading { get; set; } = true;
+    private bool IsRunning { get; set; }
+    private bool LoadedInitialData { get; set; }
+
+    private string ScenarioCurrency => Exposure?.BaseCurrency ?? "USD";
+
+    private decimal CurrentScenarioValue =>
+        Exposure?.TotalEstimatedValue ??
+        Result?.Impacts.Sum(static impact => impact.EstimatedValue) ??
+        0m;
+
+    private decimal ProjectedScenarioValue =>
+        CurrentScenarioValue + (Result?.EstimatedPortfolioImpactValue ?? 0m);
+
+    private bool CanUseScenarioLab =>
+        Permissions.CanRead &&
+        Permissions.CanReadMacroData &&
+        Permissions.CanRunScenario;
+
+    private bool IsRunDisabled =>
+        !CanUseScenarioLab ||
+        IsRunning ||
+        SelectedPortfolioId is null ||
+        SelectedReleaseEventId is null;
+
+    private string SelectedPortfolioIdText
+    {
+        get => SelectedPortfolioId?.ToString() ?? string.Empty;
+        set => SelectedPortfolioId = ParseGuid(value);
+    }
+
+    private string SelectedReleaseEventIdText
+    {
+        get => SelectedReleaseEventId?.ToString() ?? string.Empty;
+        set => SelectedReleaseEventId = ParseGuid(value);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (LoadedInitialData)
+        {
+            return;
+        }
+
+        LoadedInitialData = true;
+        await LoadInitialDataAsync();
+    }
+
+    private async Task LoadInitialDataAsync()
+    {
+        IsLoading = true;
+        LoadError = null;
+        RunError = null;
+        Result = null;
+
+        if (!CanUseScenarioLab)
+        {
+            Portfolios = Array.Empty<PortfolioContract>();
+            MacroEvents = Array.Empty<MacroCalendarEventContract>();
+            Exposure = null;
+            IsLoading = false;
+            return;
+        }
+
+        try
+        {
+            var portfolioPage = await PortfolioAnalyticsService.GetPortfoliosAsync(
+                status: PortfolioStatus.Active,
+                pageNumber: 1,
+                pageSize: 100);
+            Portfolios = portfolioPage.Items;
+
+            MacroEvents = await PortfolioAnalyticsService.GetMacroCalendarAsync(
+                DateTime.Today.AddDays(-7).ToUniversalTime(),
+                DateTime.Today.AddDays(30).AddTicks(-1).ToUniversalTime());
+
+            SelectedPortfolioId = ResolveSelectedPortfolioId();
+            SelectedReleaseEventId = ResolveSelectedReleaseEventId();
+            ApplySelectedReleaseDefaults();
+            await LoadExposureAsync();
+        }
+        catch (PlatformApiException ex)
+        {
+            LoadError = ResolveApiError(ex);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task OnPortfolioSelectionChangedAsync()
+    {
+        Result = null;
+        await LoadExposureAsync();
+    }
+
+    private void OnReleaseSelectionChanged()
+    {
+        Result = null;
+        ApplySelectedReleaseDefaults();
+    }
+
+    private async Task LoadExposureAsync()
+    {
+        Exposure = null;
+        if (SelectedPortfolioId is null || !Permissions.CanRead)
+        {
+            return;
+        }
+
+        try
+        {
+            Exposure = await PortfolioAnalyticsService.GetPortfolioExposureAsync(SelectedPortfolioId.Value);
+        }
+        catch (PlatformApiException ex)
+        {
+            LoadError = ResolveApiError(ex);
+        }
+    }
+
+    private async Task RunScenarioAsync()
+    {
+        if (SelectedPortfolioId is null || SelectedReleaseEventId is null)
+        {
+            return;
+        }
+
+        IsRunning = true;
+        RunError = null;
+        Result = null;
+
+        try
+        {
+            Result = await PortfolioAnalyticsService.RunPortfolioScenarioAsync(
+                SelectedPortfolioId.Value,
+                new PortfolioScenarioRunRequestContract
+                {
+                    MacroReleaseEventId = SelectedReleaseEventId.Value,
+                    ScenarioName = ScenarioName,
+                    ShockPercent = ShockPercent
+                });
+        }
+        catch (PlatformApiException ex)
+        {
+            RunError = ResolveApiError(ex);
+        }
+        finally
+        {
+            IsRunning = false;
+        }
+    }
+
+    private Guid? ResolveSelectedPortfolioId()
+    {
+        if (QueryPortfolioId.HasValue && Portfolios.Any(portfolio => portfolio.Id == QueryPortfolioId.Value))
+        {
+            return QueryPortfolioId.Value;
+        }
+
+        return Portfolios.FirstOrDefault()?.Id;
+    }
+
+    private Guid? ResolveSelectedReleaseEventId()
+    {
+        if (QueryReleaseEventId.HasValue && MacroEvents.Any(item => item.ReleaseEventId == QueryReleaseEventId.Value))
+        {
+            return QueryReleaseEventId.Value;
+        }
+
+        return MacroEvents
+            .OrderBy(item => item.ReleaseTimeUtc < DateTime.UtcNow)
+            .ThenBy(item => Math.Abs((item.ReleaseTimeUtc - DateTime.UtcNow).TotalMinutes))
+            .FirstOrDefault()
+            ?.ReleaseEventId;
+    }
+
+    private void ApplySelectedReleaseDefaults()
+    {
+        var selectedRelease = SelectedRelease();
+        if (selectedRelease is null)
+        {
+            ScenarioName = null;
+            ShockPercent = null;
+            return;
+        }
+
+        ScenarioName = string.IsNullOrWhiteSpace(ScenarioName)
+            ? $"{selectedRelease.SeriesName} shock"
+            : ScenarioName;
+        ShockPercent ??= selectedRelease.SurpriseValue ?? 1m;
+    }
+
+    private MacroCalendarEventContract? SelectedRelease()
+    {
+        return SelectedReleaseEventId.HasValue
+            ? MacroEvents.FirstOrDefault(item => item.ReleaseEventId == SelectedReleaseEventId.Value)
+            : null;
+    }
+
+    private static Guid? ParseGuid(string? value)
+    {
+        return Guid.TryParse(value, out var id) ? id : null;
+    }
+
+    private static string FormatReleaseOption(MacroCalendarEventContract item)
+    {
+        return $"{item.ReleaseTimeUtc.ToLocalTime():g} - {item.SeriesName}";
+    }
+
+    private static string FormatPercent(decimal value)
+    {
+        return $"{value:N2}%";
+    }
+
+    private static string FormatSignedMoney(decimal value)
+    {
+        return value > 0m
+            ? $"+{value:N2}"
+            : value.ToString("N2");
+    }
+
+    private static string BuildProfitLossCardClass(decimal value)
+    {
+        return value switch
+        {
+            > 0m => "ui green card",
+            < 0m => "ui red card",
+            _ => "ui card"
+        };
+    }
+
+    private static string ImpactCellClass(decimal value)
+    {
+        var tone = value switch
+        {
+            > 0m => "positive",
+            < 0m => "negative",
+            _ => string.Empty
+        };
+
+        return string.IsNullOrWhiteSpace(tone)
+            ? "right aligned"
+            : $"right aligned {tone}";
+    }
+
+    private static string WarningIconClass(string? severity)
+    {
+        return string.Equals(severity, "Info", StringComparison.OrdinalIgnoreCase)
+            ? "info circle large middle aligned icon"
+            : "exclamation triangle large middle aligned icon";
+    }
+
+    private static string ResolveApiError(PlatformApiException ex)
+    {
+        return string.IsNullOrWhiteSpace(ex.RemoteMessage)
+            ? ex.Message
+            : ex.RemoteMessage;
+    }
+}

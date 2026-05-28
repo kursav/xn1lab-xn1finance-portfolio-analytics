@@ -1,0 +1,1026 @@
+@using XN1Lab.Platform.Api.Exceptions
+@using XN1Lab.Platform.CoreServices.Contracts.PortfolioAnalytics
+@using XN1Lab.Platform.Shared.Pagination
+@using XN1Lab.Platform.UI.Dialogs
+@using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.PortfolioAnalytics.Services
+@inject IPortfolioAnalyticsService PortfolioAnalyticsService
+
+<div class="xn1-workspace-entity-section">
+    <div class="xn1-workspace-entity-section-toolbar">
+        <div class="ui fluid action left icon input">
+            <i class="search icon"></i>
+            <input type="text"
+                   value="@HoldingSearchText"
+                   placeholder="Search holdings"
+                   @oninput="OnHoldingSearchTextInput"
+                   @onkeydown="OnHoldingSearchKeyDownAsync" />
+            <button type="button"
+                    class="@($"ui primary button {(IsHoldingLoading ? "loading disabled" : string.Empty)}")"
+                    disabled="@IsHoldingLoading"
+                    @onclick="SearchHoldingsAsync">
+                Search
+            </button>
+        </div>
+        <div class="xn1-workspace-entity-section-actions">
+            <button type="button"
+                    class="ui @(IsHoldingFilterActive ? "primary" : "basic") icon button"
+                    title="Filters"
+                    @onclick="ShowHoldingFilterFlyout">
+                <i class="filter icon"></i>
+            </button>
+            <button type="button"
+                    class="@($"ui primary icon button {(!Permissions.CanWrite ? "disabled" : string.Empty)}")"
+                    title="Add holding"
+                    disabled="@(!Permissions.CanWrite)"
+                    @onclick="OpenCreateHoldingFlyout">
+                <i class="plus icon"></i>
+            </button>
+            <button type="button"
+                    class="@($"ui icon button {(IsHoldingLoading ? "loading disabled" : string.Empty)}")"
+                    title="Refresh"
+                    disabled="@IsHoldingLoading"
+                    @onclick="LoadHoldingsAsync">
+                <i class="refresh icon"></i>
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(HoldingErrorMessage))
+    {
+        <div class="ui warning message">@HoldingErrorMessage</div>
+    }
+
+    <WorkspacePageListTable Compact="true" Selectable="true">
+        <thead>
+            <tr>
+                <WorkspacePageTableHeaderCell Title="Symbol"
+                                              FilterActive="@IsHoldingFilterActive"
+                                              FilterCount="@ActiveHoldingFilterCount"
+                                              FilterTriggerOnly
+                                              OnFilterClick="OpenHoldingFilterFlyoutAsync" />
+                <th>Type</th>
+                <th>Sector</th>
+                <th class="right aligned">Quantity</th>
+                <th class="right aligned">Avg unit cost</th>
+                <th>Status</th>
+                <th class="right aligned">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (IsHoldingLoading)
+            {
+                <tr>
+                    <td colspan="7">
+                        <Loader Text="Loading holdings" />
+                    </td>
+                </tr>
+            }
+            else if (HoldingPage.TotalItems == 0)
+            {
+                <tr>
+                    <td colspan="7">
+                        <EmptyState Icon="chart pie" Title="No holdings yet" />
+                    </td>
+                </tr>
+            }
+            else
+            {
+                @foreach (var holding in HoldingPage.Items)
+                {
+                    <tr>
+                        <td>
+                            <strong>@holding.Symbol</strong>
+                            @if (!string.IsNullOrWhiteSpace(holding.InstrumentName))
+                            {
+                                <div class="meta">@holding.InstrumentName</div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(holding.ExchangeCode))
+                            {
+                                <div class="meta">@holding.ExchangeCode</div>
+                            }
+                        </td>
+                        <td>@holding.InstrumentType</td>
+                        <td>
+                            @(string.IsNullOrWhiteSpace(holding.SectorName) ? "-" : holding.SectorName)
+                            @if (!string.IsNullOrWhiteSpace(holding.IndustryName))
+                            {
+                                <div class="meta">@holding.IndustryName</div>
+                            }
+                            else if (!string.IsNullOrWhiteSpace(holding.SectorKey))
+                            {
+                                <div class="meta">@holding.SectorKey</div>
+                            }
+                        </td>
+                        <td class="right aligned">@holding.Quantity.ToString("N4")</td>
+                        <td class="right aligned">@FormatMoney(holding.AverageCost, holding.Currency)</td>
+                        <td>@holding.Status</td>
+                        <td class="right aligned">
+                            <button type="button"
+                                    disabled="@(!Permissions.CanWrite)"
+                                    class="@($"ui tiny icon button {(!Permissions.CanWrite ? "disabled" : string.Empty)}")"
+                                    title="Edit"
+                                    @onclick="() => OpenEditHoldingFlyout(holding)">
+                                <i class="edit icon"></i>
+                            </button>
+                            <button type="button"
+                                    disabled="@(!Permissions.CanDelete || DeletingHoldingId == holding.Id)"
+                                    class="@($"ui tiny negative icon button {BuildBusyClass(DeletingHoldingId == holding.Id, !Permissions.CanDelete)}")"
+                                    title="Delete"
+                                    @onclick="() => DeleteHoldingAsync(holding)">
+                                <i class="trash icon"></i>
+                            </button>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+        <tfoot>
+            <tr>
+                <th colspan="7" class="right aligned">
+                    @if (!IsHoldingLoading)
+                    {
+                        <PageListNumber T="PortfolioHoldingContract"
+                                        Data="@HoldingPage"
+                                        OnPageChanged="LoadHoldingsAsync"
+                                        PageSizeOptions="@PageSizeOptions" />
+                    }
+                </th>
+            </tr>
+        </tfoot>
+    </WorkspacePageListTable>
+</div>
+
+<WorkspacePageFilterFlyout Visible="@IsHoldingFilterOpen"
+                           VisibleChanged="OnHoldingFilterVisibleChangedAsync"
+                           Title="Holding filters"
+                           Subtitle="@BuildHoldingFilterSubtitle()"
+                           TitleIcon="filter"
+                           ClearText="Clear"
+                           CloseText="Close"
+                           ApplyText="Apply"
+                           OnClear="ClearHoldingFiltersAsync"
+                           OnApply="ApplyHoldingFiltersAsync">
+    <WorkspacePageFilters>
+        <div class="field">
+            <label>Symbol</label>
+            <InputText class="ui input" @bind-Value="HoldingSymbolFilter" />
+        </div>
+        <div class="field">
+            <label>Search</label>
+            <InputText class="ui input" @bind-Value="HoldingSearchText" />
+        </div>
+        <WorkspacePageFilterSelect Label="Type"
+                                   Value="@HoldingInstrumentTypeFilterValue"
+                                   NoneText="Any"
+                                   OnChange="OnHoldingInstrumentTypeFilterChangedAsync">
+            @foreach (var instrumentType in Enum.GetValues<PortfolioInstrumentType>())
+            {
+                <option value="@instrumentType">@instrumentType</option>
+            }
+        </WorkspacePageFilterSelect>
+        <WorkspacePageFilterSelect Label="Status"
+                                   Value="@HoldingStatusFilterValue"
+                                   NoneText="Any"
+                                   OnChange="OnHoldingStatusFilterChangedAsync">
+            @foreach (var status in Enum.GetValues<PortfolioHoldingStatus>())
+            {
+                <option value="@status">@status</option>
+            }
+        </WorkspacePageFilterSelect>
+    </WorkspacePageFilters>
+</WorkspacePageFilterFlyout>
+
+<WorkspaceEntityFlyout Visible="@IsHoldingEditorOpen"
+                       VisibleChanged="OnHoldingEditorVisibleChangedAsync"
+                       Title="@HoldingEditorTitle"
+                       Subtitle="@HoldingEditModel.Symbol"
+                       TitleIcon="chart pie"
+                       Loading="@IsHoldingSaving">
+    <HeaderActions>
+        <button type="button"
+                class="@($"ui primary icon button {BuildBusyClass(IsHoldingSaving, !Permissions.CanWrite)}")"
+                title="Save holding"
+                disabled="@(!Permissions.CanWrite || IsHoldingSaving)"
+                @onclick="SaveHoldingAsync">
+            <i class="save icon"></i>
+        </button>
+        <button type="button"
+                class="ui icon button"
+                title="Close"
+                disabled="@IsHoldingSaving"
+                @onclick="CloseHoldingEditorAsync">
+            <i class="x icon"></i>
+        </button>
+    </HeaderActions>
+    <ChildContent>
+        @if (!Permissions.CanWrite)
+        {
+            <div class="ui warning message">
+                <i class="lock icon"></i>
+                Portfolio write permission is required.
+            </div>
+        }
+        else if (!Permissions.CanReadMarketData)
+        {
+            <div class="ui message">
+                <i class="lock icon"></i>
+                Market-data read permission is required for instrument lookup.
+            </div>
+        }
+
+        <EditForm Model="HoldingEditModel" OnValidSubmit="SaveHoldingAsync">
+            <DataAnnotationsValidator />
+            <div class="ui form">
+                <fieldset disabled="@(!Permissions.CanWrite)" style="border:0;margin:0;padding:0;">
+                    <div class="two fields">
+                        <div class="field">
+                            <label>Instrument search</label>
+                            <InputText class="ui input" @bind-Value="InstrumentSearchText" />
+                        </div>
+                        <div class="field">
+                            <label>&nbsp;</label>
+                            <button type="button"
+                                    disabled="@(!Permissions.CanReadMarketData || IsLookupLoading)"
+                                    class="@($"ui small basic {BuildBusyClass(IsLookupLoading, !Permissions.CanReadMarketData)} button")"
+                                    @onclick="SearchInstrumentAsync">
+                                <i class="search icon"></i>
+                                Search instrument
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="two fields">
+                        <div class="field">
+                            <label>Symbol</label>
+                            <InputText class="ui input" @bind-Value="HoldingEditModel.Symbol" />
+                        </div>
+                        <div class="field">
+                            <label>Exchange</label>
+                            <InputText class="ui input" @bind-Value="HoldingEditModel.ExchangeCode" />
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label>Name</label>
+                        <InputText class="ui input" @bind-Value="HoldingEditModel.InstrumentName" />
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(LookupMessage))
+                    {
+                        <div class="ui tiny message">@LookupMessage</div>
+                    }
+
+                    @if (LookupResults.Count > 0)
+                    {
+                        <table class="ui very compact small table">
+                            <thead>
+                                <tr>
+                                    <th>Instrument</th>
+                                    <th>Sector</th>
+                                    <th class="right aligned">Use</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var instrument in LookupResults)
+                                {
+                                    <tr>
+                                        <td>
+                                            <strong>@instrument.Symbol</strong>
+                                            @if (!string.IsNullOrWhiteSpace(instrument.ExchangeCode))
+                                            {
+                                                <span class="ui tiny label">@instrument.ExchangeCode</span>
+                                            }
+                                            <div class="meta">@instrument.Name</div>
+                                        </td>
+                                        <td>@(string.IsNullOrWhiteSpace(instrument.SectorName) ? "-" : instrument.SectorName)</td>
+                                        <td class="right aligned">
+                                            <button type="button" class="ui tiny primary button" @onclick="() => UseInstrumentAsync(instrument)">
+                                                <i class="check icon"></i>
+                                                Use
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+
+                    @if (HasInstrumentMapping)
+                    {
+                        <div class="ui horizontal divided list">
+                            <div class="item">
+                                <div class="content">
+                                    <div class="header">Sector</div>
+                                    @DisplayValue(HoldingEditModel.SectorName)
+                                </div>
+                            </div>
+                            <div class="item">
+                                <div class="content">
+                                    <div class="header">Industry</div>
+                                    @DisplayValue(HoldingEditModel.IndustryName)
+                                </div>
+                            </div>
+                            <div class="item">
+                                <div class="content">
+                                    <div class="header">Type</div>
+                                    @HoldingEditModel.InstrumentType
+                                </div>
+                            </div>
+                            <div class="item">
+                                <div class="content">
+                                    <div class="header">Currency</div>
+                                    @HoldingEditModel.Currency
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="two fields">
+                        <div class="field">
+                            <label>Type</label>
+                            <InputSelect class="ui dropdown" @bind-Value="HoldingEditModel.InstrumentType">
+                                @foreach (var instrumentType in Enum.GetValues<PortfolioInstrumentType>())
+                                {
+                                    <option value="@instrumentType">@instrumentType</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="field">
+                            <label>Status</label>
+                            <InputSelect class="ui dropdown" @bind-Value="HoldingEditModel.Status">
+                                @foreach (var status in Enum.GetValues<PortfolioHoldingStatus>())
+                                {
+                                    <option value="@status">@status</option>
+                                }
+                            </InputSelect>
+                        </div>
+                    </div>
+
+                    <div class="three fields">
+                        <div class="field">
+                            <label>Quantity</label>
+                            <InputNumber class="ui input" @bind-Value="HoldingEditModel.Quantity" />
+                        </div>
+                        <div class="field">
+                            <label>Average cost / unit</label>
+                            <InputNumber class="ui input" @bind-Value="HoldingEditModel.AverageCost" />
+                        </div>
+                        <div class="field">
+                            <label>Currency</label>
+                            <InputText class="ui input" @bind-Value="HoldingEditModel.Currency" />
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label>Acquired date</label>
+                        <InputDate class="ui input" @bind-Value="HoldingEditModel.AcquiredAtUtc" />
+                    </div>
+
+                    <div class="field">
+                        <label>Notes</label>
+                        <InputTextArea class="ui input" @bind-Value="HoldingEditModel.Notes" />
+                    </div>
+                </fieldset>
+            </div>
+        </EditForm>
+    </ChildContent>
+</WorkspaceEntityFlyout>
+
+@code {
+    private const string NoFilterValue = "none";
+    private static readonly IReadOnlyList<int> PageSizeOptions = [20, 50, 100, 200];
+
+    [Parameter]
+    public PortfolioContract Portfolio { get; set; } = new();
+
+    [Parameter]
+    public PortfolioAnalyticsPermissionState Permissions { get; set; } = default!;
+
+    private Guid CurrentPortfolioId { get; set; }
+    private PaginatedList<PortfolioHoldingContract> HoldingPage { get; set; } = new();
+    private PortfolioHoldingContract HoldingEditModel { get; set; } = CreateNewHolding(Guid.Empty, null);
+    private IReadOnlyList<SecurityInstrumentContract> LookupResults { get; set; } = Array.Empty<SecurityInstrumentContract>();
+    private string? HoldingSearchText { get; set; }
+    private string? HoldingSymbolFilter { get; set; }
+    private string HoldingInstrumentTypeFilterValue { get; set; } = NoFilterValue;
+    private string HoldingStatusFilterValue { get; set; } = NoFilterValue;
+    private string? InstrumentSearchText { get; set; }
+    private string? InstrumentMappingSourceSymbol { get; set; }
+    private string? HoldingErrorMessage { get; set; }
+    private string? LookupMessage { get; set; }
+    private bool IsHoldingLoading { get; set; }
+    private bool IsHoldingSaving { get; set; }
+    private bool IsLookupLoading { get; set; }
+    private bool IsHoldingFilterOpen { get; set; }
+    private bool IsHoldingEditorOpen { get; set; }
+    private Guid? DeletingHoldingId { get; set; }
+
+    private string HoldingEditorTitle => HoldingEditModel.Id == Guid.Empty ? "Add holding" : "Edit holding";
+
+    private PortfolioHoldingStatus? HoldingStatusFilter => ParseNullableEnum<PortfolioHoldingStatus>(HoldingStatusFilterValue);
+
+    private PortfolioInstrumentType? HoldingInstrumentTypeFilter => ParseNullableEnum<PortfolioInstrumentType>(HoldingInstrumentTypeFilterValue);
+
+    private int ActiveHoldingFilterCount =>
+        CountActiveFilter(HoldingSymbolFilter) +
+        CountActiveFilter(HoldingSearchText) +
+        (HoldingInstrumentTypeFilter.HasValue ? 1 : 0) +
+        (HoldingStatusFilter.HasValue ? 1 : 0);
+
+    private bool IsHoldingFilterActive => ActiveHoldingFilterCount > 0;
+
+    private bool HasInstrumentMapping =>
+        !string.IsNullOrWhiteSpace(HoldingEditModel.SectorName) ||
+        !string.IsNullOrWhiteSpace(HoldingEditModel.IndustryName) ||
+        !string.IsNullOrWhiteSpace(HoldingEditModel.SectorKey);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Portfolio.Id == Guid.Empty || Portfolio.Id == CurrentPortfolioId)
+        {
+            return;
+        }
+
+        CurrentPortfolioId = Portfolio.Id;
+        HoldingPage.PageIndex = 1;
+        ResetHoldingEditor();
+        await LoadHoldingsAsync();
+    }
+
+    private async Task LoadHoldingsAsync()
+    {
+        if (CurrentPortfolioId == Guid.Empty)
+        {
+            return;
+        }
+
+        IsHoldingLoading = true;
+        HoldingErrorMessage = null;
+
+        try
+        {
+            HoldingPage = await PortfolioAnalyticsService.GetHoldingsAsync(
+                CurrentPortfolioId,
+                status: HoldingStatusFilter,
+                instrumentType: HoldingInstrumentTypeFilter,
+                symbol: HoldingSymbolFilter,
+                searchText: HoldingSearchText,
+                pageNumber: Math.Max(HoldingPage.PageIndex, 1),
+                pageSize: HoldingPage.PageSize <= 0 ? 50 : HoldingPage.PageSize);
+        }
+        catch (PlatformApiException ex)
+        {
+            HoldingErrorMessage = ResolveApiError(ex);
+        }
+        finally
+        {
+            IsHoldingLoading = false;
+        }
+    }
+
+    private async Task SaveHoldingAsync()
+    {
+        if (!Permissions.CanWrite)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(HoldingEditModel.Symbol) && !string.IsNullOrWhiteSpace(InstrumentSearchText))
+        {
+            await TryApplySingleInstrumentSearchAsync();
+        }
+
+        var validationError = ValidateHoldingEditModel();
+        if (!string.IsNullOrWhiteSpace(validationError))
+        {
+            HoldingErrorMessage = validationError;
+            return;
+        }
+
+        IsHoldingSaving = true;
+        HoldingErrorMessage = null;
+        LookupMessage = null;
+
+        try
+        {
+            NormalizeHoldingEditModel();
+            await TryApplySingleInstrumentMatchAsync();
+            HoldingEditModel = await PortfolioAnalyticsService.SaveHoldingAsync(CurrentPortfolioId, HoldingEditModel);
+            IsHoldingEditorOpen = false;
+            await LoadHoldingsAsync();
+            ResetHoldingEditor();
+        }
+        catch (PlatformApiException ex)
+        {
+            HoldingErrorMessage = ResolveApiError(ex);
+        }
+        finally
+        {
+            IsHoldingSaving = false;
+        }
+    }
+
+    private async Task DeleteHoldingAsync(PortfolioHoldingContract holding)
+    {
+        if (!Permissions.CanDelete)
+        {
+            return;
+        }
+
+        DeletingHoldingId = holding.Id;
+        HoldingErrorMessage = null;
+
+        try
+        {
+            await PortfolioAnalyticsService.DeleteHoldingAsync(CurrentPortfolioId, holding.Id);
+            if (HoldingEditModel.Id == holding.Id)
+            {
+                await CloseHoldingEditorAsync();
+            }
+
+            await LoadHoldingsAsync();
+        }
+        catch (PlatformApiException ex)
+        {
+            HoldingErrorMessage = ResolveApiError(ex);
+        }
+        finally
+        {
+            DeletingHoldingId = null;
+        }
+    }
+
+    private async Task SearchInstrumentAsync()
+    {
+        LookupMessage = null;
+        LookupResults = Array.Empty<SecurityInstrumentContract>();
+
+        if (!Permissions.CanReadMarketData)
+        {
+            LookupMessage = "Market-data read permission is required.";
+            return;
+        }
+
+        var query = ResolveInstrumentSearchText();
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            LookupMessage = "Enter a symbol or name first.";
+            return;
+        }
+
+        IsLookupLoading = true;
+
+        try
+        {
+            LookupResults = await PortfolioAnalyticsService.SearchInstrumentsAsync(
+                query,
+                HoldingEditModel.ExchangeCode,
+                take: 10);
+
+            if (LookupResults.Count == 0)
+            {
+                LookupMessage = "No instrument match found.";
+            }
+            else if (LookupResults.Count == 1)
+            {
+                await UseInstrumentAsync(LookupResults[0]);
+            }
+            else
+            {
+                LookupMessage = "Multiple matches found. Pick the instrument that should drive sector mapping.";
+            }
+        }
+        catch (PlatformApiException ex)
+        {
+            LookupMessage = ResolveApiError(ex);
+        }
+        finally
+        {
+            IsLookupLoading = false;
+        }
+    }
+
+    private async Task UseInstrumentAsync(SecurityInstrumentContract instrument)
+    {
+        if (!Permissions.CanWrite)
+        {
+            return;
+        }
+
+        IsLookupLoading = true;
+
+        try
+        {
+            var resolved = await PortfolioAnalyticsService.ResolveExternalInstrumentAsync(
+                instrument.Symbol,
+                instrument.ProviderSymbol);
+
+            ApplyInstrument(resolved ?? instrument, showMessage: true);
+        }
+        catch (PlatformApiException)
+        {
+            ApplyInstrument(instrument, showMessage: true);
+        }
+        finally
+        {
+            IsLookupLoading = false;
+        }
+    }
+
+    private void ApplyInstrument(SecurityInstrumentContract instrument, bool showMessage)
+    {
+        if (!Permissions.CanWrite)
+        {
+            return;
+        }
+
+        HoldingEditModel.Symbol = NormalizeCode(instrument.Symbol, HoldingEditModel.Symbol);
+        HoldingEditModel.ExchangeCode = NormalizeNullableCode(instrument.ExchangeCode);
+        HoldingEditModel.InstrumentName = instrument.Name;
+        HoldingEditModel.InstrumentType = instrument.InstrumentType;
+        HoldingEditModel.SectorKey = NormalizeNullableKey(instrument.SectorKey);
+        HoldingEditModel.SectorName = instrument.SectorName;
+        HoldingEditModel.IndustryName = instrument.IndustryName;
+        HoldingEditModel.Currency = NormalizeCode(instrument.Currency, HoldingEditModel.Currency);
+        InstrumentMappingSourceSymbol = HoldingEditModel.Symbol;
+        InstrumentSearchText = FormatInstrumentSearchText(instrument);
+
+        if (showMessage)
+        {
+            LookupMessage = "Instrument fields filled.";
+        }
+    }
+
+    private void OpenCreateHoldingFlyout()
+    {
+        if (!Permissions.CanWrite)
+        {
+            return;
+        }
+
+        ResetHoldingEditor();
+        IsHoldingEditorOpen = true;
+    }
+
+    private void OpenEditHoldingFlyout(PortfolioHoldingContract holding)
+    {
+        if (!Permissions.CanWrite)
+        {
+            return;
+        }
+
+        LookupMessage = null;
+        LookupResults = Array.Empty<SecurityInstrumentContract>();
+        InstrumentMappingSourceSymbol = NormalizeCode(holding.Symbol, string.Empty);
+        InstrumentSearchText = FormatInstrumentSearchText(holding.Symbol, holding.InstrumentName);
+
+        HoldingEditModel = new PortfolioHoldingContract
+        {
+            Id = holding.Id,
+            PortfolioId = holding.PortfolioId,
+            OwnerAccountId = holding.OwnerAccountId,
+            Symbol = holding.Symbol,
+            ExchangeCode = holding.ExchangeCode,
+            InstrumentName = holding.InstrumentName,
+            InstrumentType = holding.InstrumentType,
+            SectorKey = holding.SectorKey,
+            SectorName = holding.SectorName,
+            IndustryName = holding.IndustryName,
+            Currency = holding.Currency,
+            Quantity = holding.Quantity,
+            AverageCost = holding.AverageCost,
+            AcquiredAtUtc = holding.AcquiredAtUtc,
+            Status = holding.Status,
+            Notes = holding.Notes,
+            CreatedAtUtc = holding.CreatedAtUtc,
+            UpdatedAtUtc = holding.UpdatedAtUtc,
+            CreatedByAccountId = holding.CreatedByAccountId,
+            UpdatedByAccountId = holding.UpdatedByAccountId
+        };
+
+        IsHoldingEditorOpen = true;
+    }
+
+    private void ResetHoldingEditor()
+    {
+        HoldingEditModel = CreateNewHolding(CurrentPortfolioId, Portfolio.BaseCurrency);
+        LookupResults = Array.Empty<SecurityInstrumentContract>();
+        LookupMessage = null;
+        InstrumentMappingSourceSymbol = null;
+        InstrumentSearchText = null;
+    }
+
+    private void NormalizeHoldingEditModel()
+    {
+        HoldingEditModel.PortfolioId = CurrentPortfolioId;
+        HoldingEditModel.Symbol = NormalizeCode(HoldingEditModel.Symbol, string.Empty);
+        HoldingEditModel.ExchangeCode = NormalizeNullableCode(HoldingEditModel.ExchangeCode);
+        HoldingEditModel.Currency = NormalizeCode(HoldingEditModel.Currency, Portfolio.BaseCurrency);
+        HoldingEditModel.SectorKey = NormalizeNullableKey(HoldingEditModel.SectorKey);
+    }
+
+    private async Task TryApplySingleInstrumentSearchAsync()
+    {
+        if (!Permissions.CanReadMarketData)
+        {
+            return;
+        }
+
+        var query = ResolveInstrumentSearchText();
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return;
+        }
+
+        try
+        {
+            var matches = await PortfolioAnalyticsService.SearchInstrumentsAsync(
+                query,
+                HoldingEditModel.ExchangeCode,
+                take: 2);
+
+            if (matches.Count == 1)
+            {
+                await ResolveAndApplyInstrumentAsync(matches[0], showMessage: false);
+            }
+        }
+        catch (PlatformApiException ex)
+        {
+            LookupMessage = ResolveApiError(ex);
+        }
+    }
+
+    private async Task TryApplySingleInstrumentMatchAsync()
+    {
+        if (!Permissions.CanReadMarketData || string.IsNullOrWhiteSpace(HoldingEditModel.Symbol))
+        {
+            return;
+        }
+
+        var normalizedSymbol = NormalizeCode(HoldingEditModel.Symbol, string.Empty);
+        if (string.Equals(InstrumentMappingSourceSymbol, normalizedSymbol, StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(HoldingEditModel.SectorKey))
+        {
+            return;
+        }
+
+        try
+        {
+            var resolved = await PortfolioAnalyticsService.ResolveExternalInstrumentAsync(
+                normalizedSymbol,
+                HoldingEditModel.Symbol);
+
+            if (resolved is not null)
+            {
+                ApplyInstrument(resolved, showMessage: false);
+                return;
+            }
+
+            if (!string.Equals(InstrumentMappingSourceSymbol, normalizedSymbol, StringComparison.OrdinalIgnoreCase))
+            {
+                ClearInstrumentMapping();
+            }
+        }
+        catch (PlatformApiException ex)
+        {
+            LookupMessage = ResolveApiError(ex);
+        }
+    }
+
+    private async Task ResolveAndApplyInstrumentAsync(SecurityInstrumentContract instrument, bool showMessage)
+    {
+        var resolved = await PortfolioAnalyticsService.ResolveExternalInstrumentAsync(
+            instrument.Symbol,
+            instrument.ProviderSymbol);
+
+        ApplyInstrument(resolved ?? instrument, showMessage);
+    }
+
+    private void ClearInstrumentMapping()
+    {
+        HoldingEditModel.SectorKey = null;
+        HoldingEditModel.SectorName = null;
+        HoldingEditModel.IndustryName = null;
+        InstrumentMappingSourceSymbol = null;
+    }
+
+    private void ShowHoldingFilterFlyout()
+    {
+        IsHoldingFilterOpen = true;
+    }
+
+    private Task OpenHoldingFilterFlyoutAsync(MouseEventArgs _)
+    {
+        ShowHoldingFilterFlyout();
+        return Task.CompletedTask;
+    }
+
+    private Task OnHoldingFilterVisibleChangedAsync(bool visible)
+    {
+        IsHoldingFilterOpen = visible;
+        return Task.CompletedTask;
+    }
+
+    private async Task ApplyHoldingFiltersAsync()
+    {
+        HoldingPage.PageIndex = 1;
+        IsHoldingFilterOpen = false;
+        await LoadHoldingsAsync();
+    }
+
+    private async Task ClearHoldingFiltersAsync()
+    {
+        HoldingSymbolFilter = null;
+        HoldingSearchText = null;
+        HoldingInstrumentTypeFilterValue = NoFilterValue;
+        HoldingStatusFilterValue = NoFilterValue;
+        HoldingPage.PageIndex = 1;
+        IsHoldingFilterOpen = false;
+        await LoadHoldingsAsync();
+    }
+
+    private Task OnHoldingInstrumentTypeFilterChangedAsync(ChangeEventArgs args)
+    {
+        HoldingInstrumentTypeFilterValue = NormalizeFilterValue(args.Value);
+        return Task.CompletedTask;
+    }
+
+    private Task OnHoldingStatusFilterChangedAsync(ChangeEventArgs args)
+    {
+        HoldingStatusFilterValue = NormalizeFilterValue(args.Value);
+        return Task.CompletedTask;
+    }
+
+    private Task OnHoldingEditorVisibleChangedAsync(bool visible)
+    {
+        IsHoldingEditorOpen = visible;
+        if (!visible)
+        {
+            ResetHoldingEditor();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task CloseHoldingEditorAsync()
+    {
+        IsHoldingEditorOpen = false;
+        ResetHoldingEditor();
+        return Task.CompletedTask;
+    }
+
+    private async Task SearchHoldingsAsync()
+    {
+        HoldingPage.PageIndex = 1;
+        await LoadHoldingsAsync();
+    }
+
+    private void OnHoldingSearchTextInput(ChangeEventArgs args)
+    {
+        HoldingSearchText = args.Value?.ToString();
+    }
+
+    private async Task OnHoldingSearchKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+        {
+            await SearchHoldingsAsync();
+        }
+    }
+
+    private string? ResolveInstrumentSearchText()
+    {
+        return !string.IsNullOrWhiteSpace(InstrumentSearchText)
+            ? InstrumentSearchText
+            : HoldingEditModel.Symbol;
+    }
+
+    private string? ValidateHoldingEditModel()
+    {
+        if (string.IsNullOrWhiteSpace(HoldingEditModel.Symbol))
+        {
+            return "Symbol is required.";
+        }
+
+        if (HoldingEditModel.Quantity <= 0)
+        {
+            return "Quantity must be greater than zero.";
+        }
+
+        if (string.IsNullOrWhiteSpace(HoldingEditModel.Currency))
+        {
+            return "Currency is required.";
+        }
+
+        return null;
+    }
+
+    private string BuildHoldingFilterSubtitle()
+    {
+        return ActiveHoldingFilterCount == 0
+            ? "No filters applied."
+            : $"{ActiveHoldingFilterCount} filter{(ActiveHoldingFilterCount == 1 ? string.Empty : "s")} active.";
+    }
+
+    private static PortfolioHoldingContract CreateNewHolding(Guid portfolioId, string? baseCurrency)
+    {
+        return new PortfolioHoldingContract
+        {
+            PortfolioId = portfolioId,
+            Currency = NormalizeCode(baseCurrency, "USD"),
+            InstrumentType = PortfolioInstrumentType.Stock,
+            Status = PortfolioHoldingStatus.Active
+        };
+    }
+
+    private static string NormalizeCode(string? value, string fallback)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? fallback
+            : value.Trim().ToUpperInvariant();
+    }
+
+    private static string? NormalizeNullableCode(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim().ToUpperInvariant();
+    }
+
+    private static string? NormalizeNullableKey(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim().ToLowerInvariant();
+    }
+
+    private static string NormalizeFilterValue(object? value)
+    {
+        var text = value?.ToString();
+        return string.IsNullOrWhiteSpace(text) ? NoFilterValue : text;
+    }
+
+    private static TEnum? ParseNullableEnum<TEnum>(string? value)
+        where TEnum : struct, Enum
+    {
+        if (string.IsNullOrWhiteSpace(value) || string.Equals(value, NoFilterValue, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return Enum.TryParse<TEnum>(value, ignoreCase: true, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static int CountActiveFilter(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? 0 : 1;
+    }
+
+    private static string? FormatInstrumentSearchText(SecurityInstrumentContract instrument)
+    {
+        return FormatInstrumentSearchText(instrument.Symbol, instrument.Name);
+    }
+
+    private static string? FormatInstrumentSearchText(string? symbol, string? name)
+    {
+        if (string.IsNullOrWhiteSpace(symbol))
+        {
+            return name;
+        }
+
+        return string.IsNullOrWhiteSpace(name)
+            ? symbol
+            : $"{symbol} - {name}";
+    }
+
+    private static string DisplayValue(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "-" : value;
+    }
+
+    private static string FormatMoney(decimal? value, string currency)
+    {
+        return value.HasValue
+            ? $"{value.Value:N4} {currency}"
+            : "-";
+    }
+
+    private static string ResolveApiError(PlatformApiException ex)
+    {
+        return string.IsNullOrWhiteSpace(ex.RemoteMessage)
+            ? ex.Message
+            : ex.RemoteMessage;
+    }
+
+    private static string BuildBusyClass(bool isBusy, bool isDisabled)
+    {
+        if (isBusy)
+        {
+            return "loading disabled";
+        }
+
+        return isDisabled ? "disabled" : string.Empty;
+    }
+}

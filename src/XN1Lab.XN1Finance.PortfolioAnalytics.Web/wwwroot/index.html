@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>XN1Finance Portfolio Analytics</title>
+    <base href="/" />
+    <style>
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            margin: 0;
+            background: #f6f7f2;
+            color: #111827;
+            font-family: Lato, "Helvetica Neue", Arial, Helvetica, sans-serif;
+        }
+
+        .xn1-boot-shell {
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            box-sizing: border-box;
+        }
+
+        .xn1-boot-panel {
+            width: min(520px, 100%);
+            border: 1px solid #d9e1d8;
+            background: #ffffff;
+            box-shadow: 0 18px 46px rgba(15, 23, 42, .08);
+            padding: 28px;
+            box-sizing: border-box;
+        }
+
+        .xn1-boot-header {
+            display: grid;
+            grid-template-columns: 52px 1fr auto;
+            gap: 14px;
+            align-items: center;
+        }
+
+        .xn1-boot-mark {
+            width: 52px;
+            height: 52px;
+            display: grid;
+            place-items: center;
+            border: 1px solid #bbd4c1;
+            background: #14532d;
+            color: #ffffff;
+            font-size: 15px;
+            font-weight: 800;
+            letter-spacing: 0;
+        }
+
+        .xn1-boot-title {
+            font-size: 20px;
+            font-weight: 800;
+            line-height: 1.2;
+        }
+
+        .xn1-boot-status {
+            margin-top: 4px;
+            color: #64748b;
+            font-size: 14px;
+            line-height: 1.35;
+        }
+
+        .xn1-boot-percent {
+            min-width: 48px;
+            text-align: right;
+            font-size: 18px;
+            font-weight: 800;
+            color: #14532d;
+        }
+
+        .xn1-boot-track {
+            height: 8px;
+            margin-top: 24px;
+            overflow: hidden;
+            background: #e5e7eb;
+            border: 1px solid #d1d5db;
+        }
+
+        .xn1-boot-bar {
+            width: 0;
+            height: 100%;
+            background: #14532d;
+            transition: width .18s ease-out;
+        }
+
+        .xn1-boot-detail {
+            margin-top: 12px;
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .xn1-boot-shell.is-error .xn1-boot-bar {
+            background: #b91c1c;
+        }
+
+        .xn1-boot-shell.is-error .xn1-boot-status {
+            color: #b91c1c;
+        }
+    </style>
+    <link rel="stylesheet" href="vendor/fomantic-ui/2.9.3/semantic.min.css" />
+    <link rel="stylesheet" href="_content/XN1Lab.Platform.UI/xn1-platform-ui.css" />
+</head>
+<body>
+    <div id="app">
+        <div class="xn1-boot-shell" id="xn1-boot-shell">
+            <div class="xn1-boot-panel">
+                <div class="xn1-boot-header">
+                    <div class="xn1-boot-mark">XN1</div>
+                    <div>
+                        <div class="xn1-boot-title">XN1Finance Portfolio Analytics</div>
+                        <div class="xn1-boot-status" id="xn1-boot-status">Preparing workspace</div>
+                    </div>
+                    <div class="xn1-boot-percent" id="xn1-boot-percent">0%</div>
+                </div>
+                <div class="xn1-boot-track" aria-hidden="true">
+                    <div class="xn1-boot-bar" id="xn1-boot-bar"></div>
+                </div>
+                <div class="xn1-boot-detail" id="xn1-boot-detail">Loading application resources</div>
+            </div>
+        </div>
+    </div>
+    <script src="vendor/jquery/3.7.1/jquery.min.js"></script>
+    <script src="vendor/fomantic-ui/2.9.3/semantic.min.js"></script>
+    <script src="_content/XN1Lab.Platform.UI/xn1-platform-ui.js"></script>
+    <script src="app.js"></script>
+    <script src="_framework/blazor.webassembly.js" autostart="false"></script>
+</body>
+</html>
+

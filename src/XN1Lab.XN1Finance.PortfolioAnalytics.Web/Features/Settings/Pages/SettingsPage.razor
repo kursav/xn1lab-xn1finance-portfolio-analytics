@@ -1,0 +1,344 @@
+@page "/finance/portfolio-management/settings"
+@page "/finance/portfolio/settings"
+@attribute [Authorize]
+@using XN1Lab.Platform.Api.Exceptions
+@using XN1Lab.Platform.CoreServices.Contracts.PortfolioAnalytics
+@inject IPortfolioAnalyticsService PortfolioAnalyticsService
+@inject PortfolioAnalyticsPermissionState Permissions
+
+<PageTitle>Settings</PageTitle>
+
+<WorkspacePage>
+    <WorkspacePageContent>
+        <PortfolioAnalyticsModuleTabs />
+
+        @if (IsLoading)
+        {
+            <div class="ui active inline loader"></div>
+            <span>Loading settings...</span>
+        }
+        else
+        {
+            <div class="ui two stackable columns grid">
+                <div class="column">
+                    <div class="ui segment">
+                        <div class="ui small header">
+                            <i class="user circle outline icon"></i>
+                            Account profile
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(AccountError))
+                        {
+                            <div class="ui warning message">@AccountError</div>
+                        }
+                        else if (AccountSettings is not null)
+                        {
+                            @if (!Permissions.CanWrite)
+                            {
+                                <div class="ui message">
+                                    <i class="lock icon"></i>
+                                    Portfolio write permission is required to save account settings.
+                                </div>
+                            }
+
+                            <EditForm Model="AccountSettings" OnValidSubmit="SaveAccountSettingsAsync">
+                                <DataAnnotationsValidator />
+                                <div class="ui form">
+                                    <fieldset disabled="@(!Permissions.CanWrite)" style="border:0;margin:0;padding:0;">
+                                        <div class="two fields">
+                                            <div class="field">
+                                                <label>Base currency</label>
+                                                <InputText class="ui input" @bind-Value="AccountSettings.DefaultBaseCurrency" />
+                                            </div>
+                                            <div class="field">
+                                                <label>Investor profile</label>
+                                                <InputSelect class="ui dropdown" @bind-Value="AccountSettings.InvestorProfile">
+                                                    @foreach (var profile in Enum.GetValues<PortfolioInvestorProfile>())
+                                                    {
+                                                        <option value="@profile">@profile</option>
+                                                    }
+                                                </InputSelect>
+                                            </div>
+                                        </div>
+
+                                        <div class="three fields">
+                                            <div class="field">
+                                                <label>Equity %</label>
+                                                <InputNumber class="ui input" @bind-Value="AccountSettings.TargetEquityPercent" />
+                                            </div>
+                                            <div class="field">
+                                                <label>Fixed income %</label>
+                                                <InputNumber class="ui input" @bind-Value="AccountSettings.TargetFixedIncomePercent" />
+                                            </div>
+                                            <div class="field">
+                                                <label>Cash %</label>
+                                                <InputNumber class="ui input" @bind-Value="AccountSettings.TargetCashPercent" />
+                                            </div>
+                                        </div>
+
+                                        <div class="three fields">
+                                            <div class="field">
+                                                <label>Commodity %</label>
+                                                <InputNumber class="ui input" @bind-Value="AccountSettings.TargetCommodityPercent" />
+                                            </div>
+                                            <div class="field">
+                                                <label>Crypto %</label>
+                                                <InputNumber class="ui input" @bind-Value="AccountSettings.TargetCryptoPercent" />
+                                            </div>
+                                            <div class="field">
+                                                <label>Other %</label>
+                                                <InputNumber class="ui input" @bind-Value="AccountSettings.TargetOtherPercent" />
+                                            </div>
+                                        </div>
+
+                                        <div class="two fields">
+                                            <div class="field">
+                                                <label>Rebalance threshold %</label>
+                                                <InputNumber class="ui input" @bind-Value="AccountSettings.RebalanceWarningThresholdPercent" />
+                                            </div>
+                                            <div class="field">
+                                                <label>Macro surprise threshold %</label>
+                                                <InputNumber class="ui input" @bind-Value="AccountSettings.MacroSurpriseAlertThresholdPercent" />
+                                            </div>
+                                        </div>
+                                    </fieldset>
+
+                                    <button type="submit"
+                                            disabled="@(!Permissions.CanWrite || IsAccountSaving)"
+                                            class="@($"ui primary {BuildBusyClass(IsAccountSaving, !Permissions.CanWrite)} button")">
+                                        <i class="save icon"></i>
+                                        Save account settings
+                                    </button>
+
+                                    @if (!string.IsNullOrWhiteSpace(AccountSaveMessage))
+                                    {
+                                        <span class="ui small green text">@AccountSaveMessage</span>
+                                    }
+                                </div>
+                            </EditForm>
+                        }
+                    </div>
+                </div>
+
+                <div class="column">
+                    <div class="ui segment">
+                        <div class="ui small header">
+                            <i class="database icon"></i>
+                            Data refresh
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(SystemError))
+                        {
+                            <div class="ui warning message">@SystemError</div>
+                        }
+                        else if (SystemSettings is not null)
+                        {
+                            @if (!Permissions.CanWriteModels)
+                            {
+                                <div class="ui message">
+                                    <i class="lock icon"></i>
+                                    Model write permission is required to save refresh settings.
+                                </div>
+                            }
+
+                            <EditForm Model="SystemSettings" OnValidSubmit="SaveSystemSettingsAsync">
+                                <DataAnnotationsValidator />
+                                <div class="ui form">
+                                    <fieldset disabled="@(!Permissions.CanWriteModels)" style="border:0;margin:0;padding:0;">
+                                        <div class="two fields">
+                                            <div class="field">
+                                                <label>Macro provider</label>
+                                                <InputText class="ui input" @bind-Value="SystemSettings.MacroProviderKey" />
+                                            </div>
+                                            <div class="field">
+                                                <label>Market provider</label>
+                                                <InputText class="ui input" @bind-Value="SystemSettings.MarketDataProviderKey" />
+                                            </div>
+                                        </div>
+
+                                        <div class="three fields">
+                                            <div class="field">
+                                                <label>Interval minutes</label>
+                                                <InputNumber class="ui input" @bind-Value="SystemSettings.RefreshIntervalMinutes" />
+                                            </div>
+                                            <div class="field">
+                                                <label>Lookback days</label>
+                                                <InputNumber class="ui input" @bind-Value="SystemSettings.MacroReleaseLookbackDays" />
+                                            </div>
+                                            <div class="field">
+                                                <label>Lookahead days</label>
+                                                <InputNumber class="ui input" @bind-Value="SystemSettings.MacroReleaseLookaheadDays" />
+                                            </div>
+                                        </div>
+
+                                        <div class="inline fields">
+                                            <label>Refresh</label>
+                                            <div class="field">
+                                                <div class="ui checkbox">
+                                                    <InputCheckbox @bind-Value="SystemSettings.MacroRefreshEnabled" />
+                                                    <label>Enabled</label>
+                                                </div>
+                                            </div>
+                                            <div class="field">
+                                                <div class="ui checkbox">
+                                                    <InputCheckbox @bind-Value="SystemSettings.MacroSeriesRefreshEnabled" />
+                                                    <label>Series</label>
+                                                </div>
+                                            </div>
+                                            <div class="field">
+                                                <div class="ui checkbox">
+                                                    <InputCheckbox @bind-Value="SystemSettings.MacroReleaseRefreshEnabled" />
+                                                    <label>Releases</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </fieldset>
+
+                                    <button type="submit"
+                                            disabled="@(!Permissions.CanWriteModels || IsSystemSaving)"
+                                            class="@($"ui primary {BuildBusyClass(IsSystemSaving, !Permissions.CanWriteModels)} button")">
+                                        <i class="save icon"></i>
+                                        Save refresh settings
+                                    </button>
+
+                                    @if (!string.IsNullOrWhiteSpace(SystemSaveMessage))
+                                    {
+                                        <span class="ui small green text">@SystemSaveMessage</span>
+                                    }
+                                </div>
+                            </EditForm>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </WorkspacePageContent>
+</WorkspacePage>
+
+@code {
+    private PortfolioAnalyticsAccountSettingsContract? AccountSettings { get; set; }
+    private PortfolioAnalyticsSystemSettingsContract? SystemSettings { get; set; }
+    private bool IsLoading { get; set; } = true;
+    private bool IsAccountSaving { get; set; }
+    private bool IsSystemSaving { get; set; }
+    private string? AccountError { get; set; }
+    private string? SystemError { get; set; }
+    private string? AccountSaveMessage { get; set; }
+    private string? SystemSaveMessage { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Permissions.CanRead)
+        {
+            try
+            {
+                AccountSettings = await PortfolioAnalyticsService.GetAccountSettingsAsync();
+            }
+            catch (PlatformApiException ex)
+            {
+                AccountError = ResolveApiError(ex);
+            }
+        }
+        else
+        {
+            AccountError = "Portfolio read permission is required.";
+        }
+
+        if (Permissions.CanReadModels)
+        {
+            try
+            {
+                SystemSettings = await PortfolioAnalyticsService.GetSystemSettingsAsync();
+            }
+            catch (PlatformApiException ex)
+            {
+                SystemError = ResolveApiError(ex);
+            }
+        }
+        else
+        {
+            SystemError = "Model read permission is required.";
+        }
+
+        IsLoading = false;
+    }
+
+    private async Task SaveAccountSettingsAsync()
+    {
+        if (AccountSettings is null)
+        {
+            return;
+        }
+
+        if (!Permissions.CanWrite)
+        {
+            return;
+        }
+
+        IsAccountSaving = true;
+        AccountSaveMessage = null;
+        AccountError = null;
+
+        try
+        {
+            AccountSettings = await PortfolioAnalyticsService.SaveAccountSettingsAsync(AccountSettings);
+            AccountSaveMessage = "Saved.";
+        }
+        catch (PlatformApiException ex)
+        {
+            AccountError = ResolveApiError(ex);
+        }
+        finally
+        {
+            IsAccountSaving = false;
+        }
+    }
+
+    private async Task SaveSystemSettingsAsync()
+    {
+        if (SystemSettings is null)
+        {
+            return;
+        }
+
+        if (!Permissions.CanWriteModels)
+        {
+            return;
+        }
+
+        IsSystemSaving = true;
+        SystemSaveMessage = null;
+        SystemError = null;
+
+        try
+        {
+            SystemSettings = await PortfolioAnalyticsService.SaveSystemSettingsAsync(SystemSettings);
+            SystemSaveMessage = "Saved.";
+        }
+        catch (PlatformApiException ex)
+        {
+            SystemError = ResolveApiError(ex);
+        }
+        finally
+        {
+            IsSystemSaving = false;
+        }
+    }
+
+    private static string ResolveApiError(PlatformApiException ex)
+    {
+        return string.IsNullOrWhiteSpace(ex.RemoteMessage)
+            ? ex.Message
+            : ex.RemoteMessage;
+    }
+
+    private static string BuildBusyClass(bool isBusy, bool isDisabled)
+    {
+        if (isBusy)
+        {
+            return "loading disabled";
+        }
+
+        return isDisabled ? "disabled" : string.Empty;
+    }
+}

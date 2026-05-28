@@ -1,0 +1,6 @@
+{
+  "auth.access_checking.title": "Erisim kontrol ediliyor",
+  "auth.access_checking.message": "Hesap oturumu hazirlaniyor.",
+  "auth.access_checking.progress": "Yetkiler ve aktif hesap kapsami yukleniyor..."
+}
+

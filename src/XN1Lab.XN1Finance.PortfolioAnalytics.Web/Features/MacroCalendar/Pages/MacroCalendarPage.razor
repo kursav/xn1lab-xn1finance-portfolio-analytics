@@ -1,0 +1,281 @@
+@page "/finance/portfolio-management/macro/calendar"
+@page "/finance/portfolio/macro/calendar"
+@attribute [Authorize]
+@using XN1Lab.Platform.Api.Exceptions
+@using XN1Lab.Platform.CoreServices.Contracts.PortfolioAnalytics
+@inject IPortfolioAnalyticsService PortfolioAnalyticsService
+@inject PortfolioAnalyticsPermissionState Permissions
+
+<PageTitle>Macro Calendar</PageTitle>
+
+<WorkspacePage>
+    <WorkspacePageContent>
+        <PortfolioAnalyticsModuleTabs />
+
+        <div class="ui stackable grid">
+            <div class="four wide column">
+                <div class="ui segment">
+                    <div class="ui small header">
+                        <i class="calendar alternate outline icon"></i>
+                        Macro Calendar
+                    </div>
+
+                    <div class="ui tiny statistics">
+                        <div class="statistic">
+                            <div class="value">@Events.Count</div>
+                            <div class="label">Events</div>
+                        </div>
+                        <div class="statistic">
+                            <div class="value">@ImportantEventCount</div>
+                            <div class="label">Important</div>
+                        </div>
+                    </div>
+
+                    <div class="ui divider"></div>
+
+                    <div class="ui form">
+                        <div class="field">
+                            <label>From</label>
+                            <InputDate class="ui input" @bind-Value="FromDate" />
+                        </div>
+                        <div class="field">
+                            <label>To</label>
+                            <InputDate class="ui input" @bind-Value="ToDate" />
+                        </div>
+                        <div class="field">
+                            <label>Importance</label>
+                            <select class="ui dropdown" @bind="ImportanceFilter">
+                                <option value="">All</option>
+                                @foreach (var importance in Enum.GetValues<MacroSeriesImportance>())
+                                {
+                                    <option value="@importance">@importance</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>Country</label>
+                            <InputText class="ui input" @bind-Value="CountryCodeFilter" />
+                        </div>
+                        <div class="field">
+                            <label>Category</label>
+                            <InputText class="ui input" @bind-Value="CategoryFilter" />
+                        </div>
+                        <button type="button"
+                                disabled="@(!Permissions.CanReadMacroData || IsLoading)"
+                                class="@($"ui primary {(IsLoading ? "loading disabled" : string.Empty)} button")"
+                                @onclick="LoadCalendarAsync">
+                            <i class="sync icon"></i>
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="twelve wide column">
+                <div class="ui segment">
+                    @if (!Permissions.CanReadMacroData)
+                    {
+                        <div class="ui warning message">
+                            <i class="lock icon"></i>
+                            Macro data read permission is required.
+                        </div>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(ErrorMessage))
+                    {
+                        <div class="ui warning message">@ErrorMessage</div>
+                    }
+
+                    @if (IsLoading)
+                    {
+                        <div class="ui active inline loader"></div>
+                        <span>Loading macro events...</span>
+                    }
+                    else if (Events.Count == 0)
+                    {
+                        <div class="ui placeholder segment">
+                            <div class="ui icon header">
+                                <i class="calendar outline icon"></i>
+                                No macro events found
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <table class="ui celled compact table">
+                            <thead>
+                                <tr>
+                                    <th>Release</th>
+                                    <th>Series</th>
+                                    <th>Category</th>
+                                    <th>Importance</th>
+                                    <th>Status</th>
+                                    <th class="right aligned">Actual</th>
+                                    <th class="right aligned">Consensus</th>
+                                    <th class="right aligned">Surprise</th>
+                                    <th class="right aligned">Scenario</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in Events)
+                                {
+                                    <tr>
+                                        <td>
+                                            <strong>@FormatDate(item.ReleaseTimeUtc)</strong>
+                                            <div class="ui tiny text">@FormatTime(item.ReleaseTimeUtc)</div>
+                                        </td>
+                                        <td>
+                                            <strong>@item.SeriesName</strong>
+                                            <div class="ui tiny text">@item.SeriesKey</div>
+                                        </td>
+                                        <td>
+                                            @(string.IsNullOrWhiteSpace(item.Category) ? "-" : item.Category)
+                                            <div class="ui tiny text">@FormatRegion(item)</div>
+                                        </td>
+                                        <td>
+                                            <span class="@ImportanceLabelClass(item.Importance)">@item.Importance</span>
+                                        </td>
+                                        <td>@item.Status</td>
+                                        <td class="right aligned">@FormatValue(item.ActualValue, item.Unit)</td>
+                                        <td class="right aligned">@FormatValue(item.ConsensusValue, item.Unit)</td>
+                                        <td class="right aligned">
+                                            @FormatValue(item.SurpriseValue, item.Unit)
+                                            @if (item.SurpriseMethod != MacroSurpriseMethod.None)
+                                            {
+                                                <div class="ui tiny text">@item.SurpriseMethod</div>
+                                            }
+                                        </td>
+                                        <td class="right aligned">
+                                            @if (Permissions.CanRunScenario)
+                                            {
+                                                <a class="ui tiny basic button" href="@BuildScenarioHref(item)">
+                                                    <i class="play icon"></i>
+                                                    Use
+                                                </a>
+                                            }
+                                            else
+                                            {
+                                                <span class="ui tiny label">
+                                                    <i class="lock icon"></i>
+                                                    Locked
+                                                </span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </div>
+        </div>
+    </WorkspacePageContent>
+</WorkspacePage>
+
+@code {
+    private IReadOnlyList<MacroCalendarEventContract> Events { get; set; } = Array.Empty<MacroCalendarEventContract>();
+    private DateTime FromDate { get; set; } = DateTime.Today.AddDays(-7);
+    private DateTime ToDate { get; set; } = DateTime.Today.AddDays(30);
+    private string ImportanceFilter { get; set; } = string.Empty;
+    private string? CountryCodeFilter { get; set; }
+    private string? CategoryFilter { get; set; }
+    private string? ErrorMessage { get; set; }
+    private bool IsLoading { get; set; } = true;
+
+    private int ImportantEventCount =>
+        Events.Count(item => item.Importance is MacroSeriesImportance.High or MacroSeriesImportance.Critical);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCalendarAsync();
+    }
+
+    private async Task LoadCalendarAsync()
+    {
+        if (!Permissions.CanReadMacroData)
+        {
+            IsLoading = false;
+            ErrorMessage = null;
+            Events = Array.Empty<MacroCalendarEventContract>();
+            return;
+        }
+
+        IsLoading = true;
+        ErrorMessage = null;
+
+        try
+        {
+            Events = await PortfolioAnalyticsService.GetMacroCalendarAsync(
+                FromDate.Date.ToUniversalTime(),
+                ToDate.Date.AddDays(1).AddTicks(-1).ToUniversalTime(),
+                ParseImportanceFilter(),
+                CountryCodeFilter,
+                CategoryFilter);
+        }
+        catch (PlatformApiException ex)
+        {
+            ErrorMessage = ResolveApiError(ex);
+            Events = Array.Empty<MacroCalendarEventContract>();
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private MacroSeriesImportance? ParseImportanceFilter()
+    {
+        return Enum.TryParse<MacroSeriesImportance>(ImportanceFilter, out var importance)
+            ? importance
+            : null;
+    }
+
+    private static string BuildScenarioHref(MacroCalendarEventContract item)
+    {
+        return $"/finance/portfolio-management/scenario?releaseEventId={item.ReleaseEventId}";
+    }
+
+    private static string FormatDate(DateTime value)
+    {
+        return value == default ? "-" : value.ToLocalTime().ToString("d");
+    }
+
+    private static string FormatTime(DateTime value)
+    {
+        return value == default ? "-" : value.ToLocalTime().ToString("t");
+    }
+
+    private static string FormatRegion(MacroCalendarEventContract item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.CountryCode) && !string.IsNullOrWhiteSpace(item.Region))
+        {
+            return $"{item.CountryCode} / {item.Region}";
+        }
+
+        return item.CountryCode ?? item.Region ?? "-";
+    }
+
+    private static string FormatValue(decimal? value, string? unit)
+    {
+        return value.HasValue
+            ? $"{value.Value:N4}{(string.IsNullOrWhiteSpace(unit) ? string.Empty : $" {unit}")}"
+            : "-";
+    }
+
+    private static string ImportanceLabelClass(MacroSeriesImportance importance)
+    {
+        return importance switch
+        {
+            MacroSeriesImportance.Critical => "ui red tiny label",
+            MacroSeriesImportance.High => "ui orange tiny label",
+            MacroSeriesImportance.Medium => "ui blue tiny label",
+            _ => "ui grey tiny label"
+        };
+    }
+
+    private static string ResolveApiError(PlatformApiException ex)
+    {
+        return string.IsNullOrWhiteSpace(ex.RemoteMessage)
+            ? ex.Message
+            : ex.RemoteMessage;
+    }
+}

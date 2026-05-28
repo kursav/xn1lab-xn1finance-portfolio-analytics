@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RestoreIgnoreFailedSources>true</RestoreIgnoreFailedSources>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="9.0.14" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="9.0.14" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\platform\XN1Lab.Platform.Api\XN1Lab.Platform.Api.csproj" />
+    <ProjectReference Include="..\..\..\..\..\platform\XN1Lab.Platform.Branding\XN1Lab.Platform.Branding.csproj" />
+    <ProjectReference Include="..\..\..\..\..\platform\XN1Lab.Platform.Core\XN1Lab.Platform.Core.csproj" />
+    <ProjectReference Include="..\..\..\..\..\platform\XN1Lab.Platform.CoreServices.Contracts\XN1Lab.Platform.CoreServices.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\..\..\platform\XN1Lab.Platform.Identity\XN1Lab.Platform.Identity.csproj" />
+    <ProjectReference Include="..\..\..\..\..\platform\XN1Lab.Platform.Identity.Blazor\XN1Lab.Platform.Identity.Blazor.csproj" />
+    <ProjectReference Include="..\..\..\..\..\platform\XN1Lab.Platform.Identity.Keycloak\XN1Lab.Platform.Identity.Keycloak.csproj" />
+    <ProjectReference Include="..\..\..\..\..\platform\XN1Lab.Platform.Localization\XN1Lab.Platform.Localization.csproj" />
+    <ProjectReference Include="..\..\..\..\..\platform\XN1Lab.Platform.SaaSHost\XN1Lab.Platform.SaaSHost.csproj" />
+    <ProjectReference Include="..\..\..\..\..\platform\XN1Lab.Platform.Shared\XN1Lab.Platform.Shared.csproj" />
+    <ProjectReference Include="..\..\..\..\..\platform\XN1Lab.Platform.UI\XN1Lab.Platform.UI.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\Localization\*.json" />
+  </ItemGroup>
+
+</Project>
+

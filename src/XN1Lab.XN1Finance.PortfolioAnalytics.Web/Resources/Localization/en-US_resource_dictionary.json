@@ -1,0 +1,6 @@
+{
+  "auth.access_checking.title": "Checking access",
+  "auth.access_checking.message": "Your account session is being hydrated.",
+  "auth.access_checking.progress": "Loading permissions and active account scope..."
+}
+

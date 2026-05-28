@@ -1,0 +1,763 @@
+@page "/finance/portfolio-management"
+@page "/finance/portfolio-management/portfolios"
+@page "/finance/portfolio/portfolios"
+@attribute [Authorize]
+@using XN1Lab.Platform.Api.Exceptions
+@using XN1Lab.Platform.CoreServices.Contracts.PortfolioAnalytics
+@using XN1Lab.Platform.Shared.Pagination
+@using XN1Lab.Platform.UI.Dialogs
+@using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Portfolios.Components
+@inject IPortfolioAnalyticsService PortfolioAnalyticsService
+@inject PortfolioAnalyticsPermissionState Permissions
+
+<PageTitle>Portfolios</PageTitle>
+
+<WorkspacePage Title="Portfolios">
+    <WorkspacePageContent>
+        <PortfolioAnalyticsModuleTabs />
+
+        @if (!Permissions.CanWrite)
+        {
+            <div class="ui warning message">
+                <i class="lock icon"></i>
+                Portfolio write permission is required to create or edit portfolios.
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(ErrorMessage))
+        {
+            <div class="ui warning message">@ErrorMessage</div>
+        }
+
+        <WorkspacePageListTable Compact="true" Selectable="true">
+            <thead>
+                <tr>
+                    <th colspan="6">
+                        <div class="ui stackable middle aligned grid">
+                            <div class="computer only ten wide column">
+                                <div class="ui fluid action left icon input">
+                                    <i class="search icon"></i>
+                                    <input type="text"
+                                           value="@SearchText"
+                                           placeholder="Search portfolios"
+                                           @oninput="OnSearchTextInput"
+                                           @onkeydown="OnSearchKeyDownAsync" />
+                                    <button type="button"
+                                            class="@($"ui primary button {(IsLoading ? "loading disabled" : string.Empty)}")"
+                                            disabled="@IsLoading"
+                                            @onclick="SearchPortfoliosAsync">
+                                        Search
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="computer only six wide right aligned column">
+                                <button type="button"
+                                        class="ui @(IsFilterActive ? "primary" : "basic") icon button"
+                                        title="Filters"
+                                        @onclick="ShowFilterFlyout">
+                                    <i class="filter icon"></i>
+                                </button>
+                                <button type="button"
+                                        class="@($"ui primary icon button {(!Permissions.CanWrite ? "disabled" : string.Empty)}")"
+                                        title="Create portfolio"
+                                        disabled="@(!Permissions.CanWrite)"
+                                        @onclick="OpenCreatePortfolioFlyout">
+                                    <i class="plus icon"></i>
+                                </button>
+                                <button type="button"
+                                        class="@($"ui icon button {(IsLoading ? "loading disabled" : string.Empty)}")"
+                                        title="Refresh"
+                                        disabled="@IsLoading"
+                                        @onclick="LoadPortfoliosAsync">
+                                    <i class="refresh icon"></i>
+                                </button>
+                            </div>
+
+                            <div class="mobile tablet only sixteen wide column">
+                                <div class="ui fluid action left icon input">
+                                    <i class="search icon"></i>
+                                    <input type="text"
+                                           value="@SearchText"
+                                           placeholder="Search portfolios"
+                                           @oninput="OnSearchTextInput"
+                                           @onkeydown="OnSearchKeyDownAsync" />
+                                    <button type="button"
+                                            class="ui icon button"
+                                            title="Filters"
+                                            @onclick="ShowFilterFlyout">
+                                        <i class="filter icon"></i>
+                                    </button>
+                                    <button type="button"
+                                            class="@($"ui primary icon button {(!Permissions.CanWrite ? "disabled" : string.Empty)}")"
+                                            title="Create portfolio"
+                                            disabled="@(!Permissions.CanWrite)"
+                                            @onclick="OpenCreatePortfolioFlyout">
+                                        <i class="plus icon"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </th>
+                </tr>
+                <tr>
+                    <WorkspacePageTableHeaderCell Title="Name"
+                                                  FilterActive="@IsFilterActive"
+                                                  FilterCount="@ActiveFilterCount"
+                                                  FilterTriggerOnly
+                                                  OnFilterClick="OpenFilterFlyoutAsync" />
+                    <th>Profile</th>
+                    <th>Currency</th>
+                    <th>Status</th>
+                    <th>Updated</th>
+                    <th class="right aligned">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (IsLoading)
+                {
+                    <tr>
+                        <td colspan="6">
+                            <Loader Text="Loading portfolios" />
+                        </td>
+                    </tr>
+                }
+                else if (PortfolioPage.TotalItems == 0)
+                {
+                    <tr>
+                        <td colspan="6">
+                            <EmptyState Icon="briefcase" Title="No portfolios yet" />
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var portfolio in PortfolioPage.Items)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@portfolio.Name</strong>
+                                @if (!string.IsNullOrWhiteSpace(portfolio.Description))
+                                {
+                                    <div class="meta">@portfolio.Description</div>
+                                }
+                            </td>
+                            <td>@portfolio.InvestorProfile</td>
+                            <td>@portfolio.BaseCurrency</td>
+                            <td><span class="@BuildStatusLabelClass(portfolio.Status)">@portfolio.Status</span></td>
+                            <td>@FormatDate(portfolio.UpdatedAtUtc)</td>
+                            <td class="right aligned">
+                                <button type="button"
+                                        class="ui tiny icon button"
+                                        title="Holdings"
+                                        @onclick="() => OpenPortfolioSectionAsync(portfolio, PortfolioEntitySection.Holdings)">
+                                    <i class="chart pie icon"></i>
+                                </button>
+                                <button type="button"
+                                        disabled="@(!Permissions.CanWrite)"
+                                        class="@($"ui tiny icon button {(!Permissions.CanWrite ? "disabled" : string.Empty)}")"
+                                        title="Edit"
+                                        @onclick="() => OpenEditPortfolioFlyout(portfolio)">
+                                    <i class="edit icon"></i>
+                                </button>
+                                <button type="button"
+                                        disabled="@(!Permissions.CanDelete || DeletingPortfolioId == portfolio.Id)"
+                                        class="@($"ui tiny negative icon button {BuildBusyClass(DeletingPortfolioId == portfolio.Id, !Permissions.CanDelete)}")"
+                                        title="Delete"
+                                        @onclick="() => DeletePortfolioAsync(portfolio)">
+                                    <i class="trash icon"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+            <tfoot>
+                <tr>
+                    <th colspan="6" class="right aligned">
+                        @if (!IsLoading)
+                        {
+                            <PageListNumber T="PortfolioContract"
+                                            Data="@PortfolioPage"
+                                            OnPageChanged="LoadPortfoliosAsync"
+                                            PageSizeOptions="@PageSizeOptions" />
+                        }
+                    </th>
+                </tr>
+            </tfoot>
+        </WorkspacePageListTable>
+    </WorkspacePageContent>
+</WorkspacePage>
+
+<WorkspacePageFilterFlyout Visible="@IsFilterOpen"
+                           VisibleChanged="OnFilterVisibleChangedAsync"
+                           Title="Portfolio filters"
+                           Subtitle="@BuildFilterSubtitle()"
+                           TitleIcon="filter"
+                           ClearText="Clear"
+                           CloseText="Close"
+                           ApplyText="Apply"
+                           OnClear="ClearFiltersAsync"
+                           OnApply="ApplyFiltersAsync">
+    <WorkspacePageFilters>
+        <div class="field">
+            <label>Search</label>
+            <InputText class="ui input" @bind-Value="SearchText" />
+        </div>
+        <div class="field">
+            <label>Base currency</label>
+            <InputText class="ui input" @bind-Value="BaseCurrencyFilter" />
+        </div>
+        <WorkspacePageFilterSelect Label="Status"
+                                   Value="@StatusFilterValue"
+                                   NoneText="Any"
+                                   OnChange="OnStatusFilterChangedAsync">
+            @foreach (var status in Enum.GetValues<PortfolioStatus>())
+            {
+                <option value="@status">@status</option>
+            }
+        </WorkspacePageFilterSelect>
+    </WorkspacePageFilters>
+</WorkspacePageFilterFlyout>
+
+<WorkspaceEntityFlyout Visible="@IsEditorOpen"
+                       VisibleChanged="OnEditorVisibleChangedAsync"
+                       Title="@EditorTitle"
+                       Subtitle="@EditorSubtitle"
+                       TitleIcon="briefcase"
+                       CustomClass="xn1-workspace-entity-flyout-full"
+                       Loading="@IsSaving">
+    <HeaderActions>
+        @if (!IsCreateMode)
+        {
+            <button type="button"
+                    class="@($"ui icon button {(IsEntitySectionActive(PortfolioEntitySection.Details) ? "active" : string.Empty)}")"
+                    title="Portfolio details"
+                    @onclick="@(_ => ShowEntitySectionAsync(PortfolioEntitySection.Details))">
+                <i class="edit outline icon"></i>
+            </button>
+        }
+        @if (!IsCreateMode)
+        {
+            <button type="button"
+                    class="ui icon button"
+                    title="New portfolio"
+                    disabled="@(!Permissions.CanWrite || IsSaving)"
+                    @onclick="OpenCreatePortfolioFlyout">
+                <i class="plus icon"></i>
+            </button>
+            <button type="button"
+                    class="@($"ui negative icon button {BuildBusyClass(DeletingPortfolioId == EditModel.Id, !Permissions.CanDelete)}")"
+                    title="Delete portfolio"
+                    disabled="@(!Permissions.CanDelete || IsSaving || DeletingPortfolioId == EditModel.Id)"
+                    @onclick="DeleteCurrentPortfolioAsync">
+                <i class="trash icon"></i>
+            </button>
+        }
+        @if (IsEntitySectionActive(PortfolioEntitySection.Details))
+        {
+            <button type="button"
+                    class="@($"ui primary icon button {BuildBusyClass(IsSaving, !Permissions.CanWrite)}")"
+                    title="Save portfolio"
+                    disabled="@(!Permissions.CanWrite || IsSaving)"
+                    @onclick="SavePortfolioAsync">
+                <i class="save icon"></i>
+            </button>
+        }
+        <button type="button"
+                class="ui icon button"
+                title="Close"
+                disabled="@IsSaving"
+                @onclick="CloseEditorAsync">
+            <i class="x icon"></i>
+        </button>
+    </HeaderActions>
+    <ChildContent>
+        @if (!Permissions.CanWrite)
+        {
+            <div class="ui warning message">
+                <i class="lock icon"></i>
+                Portfolio write permission is required.
+            </div>
+        }
+
+        @switch (ActiveEntitySection)
+        {
+            case PortfolioEntitySection.Holdings:
+                if (IsCreateMode)
+                {
+                    <div class="xn1-workspace-entity-section-empty">
+                        <i class="chart pie icon"></i>
+                        <strong>Save the portfolio first.</strong>
+                        <span>Holdings can be managed after the root portfolio exists.</span>
+                    </div>
+                }
+                else
+                {
+                    <PortfolioHoldingsWorkspace Portfolio="@EditModel" Permissions="@Permissions" />
+                }
+                break;
+            case PortfolioEntitySection.Exposure:
+                <div class="xn1-workspace-entity-section-empty">
+                    <i class="chart bar outline icon"></i>
+                    <strong>Exposure</strong>
+                    <span>This child surface will use the same table, filter and CRUD flyout pattern.</span>
+                </div>
+                break;
+            default:
+                <EditForm Model="EditModel" OnValidSubmit="SavePortfolioAsync">
+                    <DataAnnotationsValidator />
+                    <div class="ui form">
+                        <fieldset disabled="@(!Permissions.CanWrite)" style="border:0;margin:0;padding:0;">
+                            <div class="field">
+                                <label>Name</label>
+                                <InputText class="ui input" @bind-Value="EditModel.Name" />
+                            </div>
+                            <div class="field">
+                                <label>Description</label>
+                                <InputTextArea class="ui input" @bind-Value="EditModel.Description" />
+                            </div>
+                            <div class="two fields">
+                                <div class="field">
+                                    <label>Investor profile</label>
+                                    <InputSelect class="ui dropdown" @bind-Value="EditModel.InvestorProfile">
+                                        @foreach (var profile in Enum.GetValues<PortfolioInvestorProfile>())
+                                        {
+                                            <option value="@profile">@profile</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="field">
+                                    <label>Base currency</label>
+                                    <InputText class="ui input" @bind-Value="EditModel.BaseCurrency" />
+                                </div>
+                            </div>
+                            <div class="field">
+                                <label>Status</label>
+                                <InputSelect class="ui dropdown" @bind-Value="EditModel.Status">
+                                    @foreach (var status in Enum.GetValues<PortfolioStatus>())
+                                    {
+                                        <option value="@status">@status</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                        </fieldset>
+                    </div>
+                </EditForm>
+                break;
+        }
+    </ChildContent>
+    <FooterNavigation>
+        <WorkspaceEntityFlyoutMenu>
+            <WorkspaceEntityFlyoutMenuItem Icon="chart pie"
+                                           Text="Holdings"
+                                           Active="@IsEntitySectionActive(PortfolioEntitySection.Holdings)"
+                                           Disabled="@IsCreateMode"
+                                           OnClick="@(_ => ShowEntitySectionAsync(PortfolioEntitySection.Holdings))" />
+            <WorkspaceEntityFlyoutMenuItem Icon="chart bar outline"
+                                           Text="Exposure"
+                                           Active="@IsEntitySectionActive(PortfolioEntitySection.Exposure)"
+                                           Disabled="@IsCreateMode"
+                                           OnClick="@(_ => ShowEntitySectionAsync(PortfolioEntitySection.Exposure))" />
+        </WorkspaceEntityFlyoutMenu>
+    </FooterNavigation>
+</WorkspaceEntityFlyout>
+
+@code {
+    private const string NoFilterValue = "none";
+    private static readonly IReadOnlyList<int> PageSizeOptions = [20, 50, 100, 200];
+
+    private PaginatedList<PortfolioContract> PortfolioPage { get; set; } = new();
+    private PortfolioContract EditModel { get; set; } = CreateNewPortfolio();
+    private string? SearchText { get; set; }
+    private string? BaseCurrencyFilter { get; set; }
+    private string StatusFilterValue { get; set; } = NoFilterValue;
+    private string? ErrorMessage { get; set; }
+    private string? SaveMessage { get; set; }
+    private bool IsLoading { get; set; } = true;
+    private bool IsSaving { get; set; }
+    private bool IsFilterOpen { get; set; }
+    private bool IsEditorOpen { get; set; }
+    private PortfolioEntitySection ActiveEntitySection { get; set; } = PortfolioEntitySection.Details;
+    private Guid? DeletingPortfolioId { get; set; }
+
+    private string EditorTitle => EditModel.Id == Guid.Empty ? "Create portfolio" : "Edit portfolio";
+
+    private string? EditorSubtitle => EditModel.Id == Guid.Empty ? null : EditModel.Name;
+
+    private bool IsCreateMode => EditModel.Id == Guid.Empty;
+
+    private PortfolioStatus? StatusFilter => ParseNullableEnum<PortfolioStatus>(StatusFilterValue);
+
+    private int ActiveFilterCount =>
+        CountActiveFilter(SearchText) +
+        CountActiveFilter(BaseCurrencyFilter) +
+        (StatusFilter.HasValue ? 1 : 0);
+
+    private bool IsFilterActive => ActiveFilterCount > 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPortfoliosAsync();
+    }
+
+    private async Task LoadPortfoliosAsync()
+    {
+        IsLoading = true;
+        ErrorMessage = null;
+
+        try
+        {
+            PortfolioPage = await PortfolioAnalyticsService.GetPortfoliosAsync(
+                SearchText,
+                status: StatusFilter,
+                baseCurrency: NormalizeNullableCode(BaseCurrencyFilter),
+                pageNumber: Math.Max(PortfolioPage.PageIndex, 1),
+                pageSize: PortfolioPage.PageSize <= 0 ? 50 : PortfolioPage.PageSize);
+        }
+        catch (PlatformApiException ex)
+        {
+            ErrorMessage = ResolveApiError(ex);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task SavePortfolioAsync()
+    {
+        if (!Permissions.CanWrite)
+        {
+            return;
+        }
+
+        var validationError = ValidateEditModel();
+        if (!string.IsNullOrWhiteSpace(validationError))
+        {
+            ErrorMessage = validationError;
+            return;
+        }
+
+        IsSaving = true;
+        ErrorMessage = null;
+        SaveMessage = null;
+
+        try
+        {
+            NormalizeEditModel();
+            EditModel = await PortfolioAnalyticsService.SavePortfolioAsync(EditModel);
+            SaveMessage = "Saved.";
+            await LoadPortfoliosAsync();
+        }
+        catch (PlatformApiException ex)
+        {
+            ErrorMessage = ResolveApiError(ex);
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    private async Task DeletePortfolioAsync(PortfolioContract portfolio)
+    {
+        if (!Permissions.CanDelete)
+        {
+            return;
+        }
+
+        DeletingPortfolioId = portfolio.Id;
+        ErrorMessage = null;
+        SaveMessage = null;
+
+        try
+        {
+            await PortfolioAnalyticsService.DeletePortfolioAsync(portfolio.Id);
+            if (EditModel.Id == portfolio.Id)
+            {
+                await CloseEditorAsync();
+            }
+
+            await LoadPortfoliosAsync();
+        }
+        catch (PlatformApiException ex)
+        {
+            ErrorMessage = ResolveApiError(ex);
+        }
+        finally
+        {
+            DeletingPortfolioId = null;
+        }
+    }
+
+    private Task DeleteCurrentPortfolioAsync()
+    {
+        if (IsCreateMode)
+        {
+            return Task.CompletedTask;
+        }
+
+        return DeletePortfolioAsync(EditModel);
+    }
+
+    private void OpenCreatePortfolioFlyout()
+    {
+        if (!Permissions.CanWrite)
+        {
+            return;
+        }
+
+        ResetEditor();
+        ActiveEntitySection = PortfolioEntitySection.Details;
+        IsEditorOpen = true;
+    }
+
+    private void OpenEditPortfolioFlyout(PortfolioContract portfolio)
+    {
+        EditPortfolio(portfolio);
+        ActiveEntitySection = PortfolioEntitySection.Details;
+        IsEditorOpen = Permissions.CanWrite;
+    }
+
+    private Task OpenPortfolioSectionAsync(PortfolioContract portfolio, PortfolioEntitySection section)
+    {
+        EditPortfolio(portfolio);
+        ActiveEntitySection = section;
+        IsEditorOpen = Permissions.CanWrite;
+        return Task.CompletedTask;
+    }
+
+    private void EditPortfolio(PortfolioContract portfolio)
+    {
+        if (!Permissions.CanWrite)
+        {
+            return;
+        }
+
+        SaveMessage = null;
+        EditModel = new PortfolioContract
+        {
+            Id = portfolio.Id,
+            OwnerAccountId = portfolio.OwnerAccountId,
+            Name = portfolio.Name,
+            Description = portfolio.Description,
+            BaseCurrency = portfolio.BaseCurrency,
+            InvestorProfile = portfolio.InvestorProfile,
+            Status = portfolio.Status,
+            CreatedAtUtc = portfolio.CreatedAtUtc,
+            UpdatedAtUtc = portfolio.UpdatedAtUtc,
+            CreatedByAccountId = portfolio.CreatedByAccountId,
+            UpdatedByAccountId = portfolio.UpdatedByAccountId
+        };
+    }
+
+    private void ResetEditor()
+    {
+        EditModel = CreateNewPortfolio();
+        ActiveEntitySection = PortfolioEntitySection.Details;
+        SaveMessage = null;
+    }
+
+    private void NormalizeEditModel()
+    {
+        EditModel.Name = EditModel.Name.Trim();
+        EditModel.BaseCurrency = NormalizeCode(EditModel.BaseCurrency, "USD");
+    }
+
+    private string? ValidateEditModel()
+    {
+        if (string.IsNullOrWhiteSpace(EditModel.Name))
+        {
+            return "Name is required.";
+        }
+
+        if (string.IsNullOrWhiteSpace(EditModel.BaseCurrency))
+        {
+            return "Base currency is required.";
+        }
+
+        return null;
+    }
+
+    private void ShowFilterFlyout()
+    {
+        IsFilterOpen = true;
+    }
+
+    private Task OpenFilterFlyoutAsync(MouseEventArgs _)
+    {
+        ShowFilterFlyout();
+        return Task.CompletedTask;
+    }
+
+    private Task OnFilterVisibleChangedAsync(bool visible)
+    {
+        IsFilterOpen = visible;
+        return Task.CompletedTask;
+    }
+
+    private async Task ApplyFiltersAsync()
+    {
+        PortfolioPage.PageIndex = 1;
+        IsFilterOpen = false;
+        await LoadPortfoliosAsync();
+    }
+
+    private async Task ClearFiltersAsync()
+    {
+        SearchText = null;
+        BaseCurrencyFilter = null;
+        StatusFilterValue = NoFilterValue;
+        PortfolioPage.PageIndex = 1;
+        IsFilterOpen = false;
+        await LoadPortfoliosAsync();
+    }
+
+    private Task OnStatusFilterChangedAsync(ChangeEventArgs args)
+    {
+        StatusFilterValue = NormalizeFilterValue(args.Value);
+        return Task.CompletedTask;
+    }
+
+    private Task OnEditorVisibleChangedAsync(bool visible)
+    {
+        IsEditorOpen = visible;
+        if (!visible)
+        {
+            ResetEditor();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task CloseEditorAsync()
+    {
+        IsEditorOpen = false;
+        ResetEditor();
+        return Task.CompletedTask;
+    }
+
+    private async Task SearchPortfoliosAsync()
+    {
+        PortfolioPage.PageIndex = 1;
+        await LoadPortfoliosAsync();
+    }
+
+    private void OnSearchTextInput(ChangeEventArgs args)
+    {
+        SearchText = args.Value?.ToString();
+    }
+
+    private async Task OnSearchKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+        {
+            await SearchPortfoliosAsync();
+        }
+    }
+
+    private string BuildFilterSubtitle()
+    {
+        return ActiveFilterCount == 0
+            ? "No filters applied."
+            : $"{ActiveFilterCount} filter{(ActiveFilterCount == 1 ? string.Empty : "s")} active.";
+    }
+
+    private Task ShowEntitySectionAsync(PortfolioEntitySection section)
+    {
+        if (IsCreateMode && section != PortfolioEntitySection.Details)
+        {
+            return Task.CompletedTask;
+        }
+
+        ActiveEntitySection = section;
+        return Task.CompletedTask;
+    }
+
+    private bool IsEntitySectionActive(PortfolioEntitySection section) =>
+        ActiveEntitySection == section;
+
+    private static PortfolioContract CreateNewPortfolio()
+    {
+        return new PortfolioContract
+        {
+            BaseCurrency = "USD",
+            InvestorProfile = PortfolioInvestorProfile.Balanced,
+            Status = PortfolioStatus.Active
+        };
+    }
+
+    private static string FormatDate(DateTime value)
+    {
+        return value == default ? "-" : value.ToLocalTime().ToString("g");
+    }
+
+    private static string NormalizeCode(string? value, string fallback)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? fallback
+            : value.Trim().ToUpperInvariant();
+    }
+
+    private static string? NormalizeNullableCode(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim().ToUpperInvariant();
+    }
+
+    private static string NormalizeFilterValue(object? value)
+    {
+        var text = value?.ToString();
+        return string.IsNullOrWhiteSpace(text) ? NoFilterValue : text;
+    }
+
+    private static TEnum? ParseNullableEnum<TEnum>(string? value)
+        where TEnum : struct, Enum
+    {
+        if (string.IsNullOrWhiteSpace(value) || string.Equals(value, NoFilterValue, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return Enum.TryParse<TEnum>(value, ignoreCase: true, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static int CountActiveFilter(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? 0 : 1;
+    }
+
+    private static string BuildStatusLabelClass(PortfolioStatus status)
+    {
+        return status == PortfolioStatus.Active
+            ? "ui green label"
+            : "ui label";
+    }
+
+    private static string ResolveApiError(PlatformApiException ex)
+    {
+        return string.IsNullOrWhiteSpace(ex.RemoteMessage)
+            ? ex.Message
+            : ex.RemoteMessage;
+    }
+
+    private static string BuildBusyClass(bool isBusy, bool isDisabled)
+    {
+        if (isBusy)
+        {
+            return "loading disabled";
+        }
+
+        return isDisabled ? "disabled" : string.Empty;
+    }
+
+    private enum PortfolioEntitySection
+    {
+        Details,
+        Holdings,
+        Exposure
+    }
+}

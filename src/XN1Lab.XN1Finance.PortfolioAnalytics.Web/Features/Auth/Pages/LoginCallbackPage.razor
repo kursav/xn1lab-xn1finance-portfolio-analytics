@@ -1,0 +1,78 @@
+@page "/auth/callback"
+@using XN1Lab.Platform.Api.Abstractions
+@using XN1Lab.Platform.Identity.Keycloak.Abstractions
+@inject IServiceProvider Services
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@inject ICoreServicesAccountSessionHydrator AccountSessionHydrator
+
+<PageTitle>Login Callback</PageTitle>
+
+<div class="ui raised very padded text segment">
+    @if (!string.IsNullOrWhiteSpace(Error))
+    {
+        <div class="ui negative message">@Error</div>
+    }
+    else
+    {
+        <div class="ui active inline loader"></div>
+        <span>Completing sign-in...</span>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "code")]
+    public string? Code { get; set; }
+
+    private string? Error { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Code))
+        {
+            Error = "Keycloak callback code is missing.";
+            return;
+        }
+
+        var authenticationService =
+            Services.GetService(typeof(XN1Lab.Platform.Identity.Keycloak.Abstractions.IKeycloakAuthenticationService))
+            as XN1Lab.Platform.Identity.Keycloak.Abstractions.IKeycloakAuthenticationService;
+        if (authenticationService is null)
+        {
+            Error = "This host is not configured for Keycloak callback flow.";
+            return;
+        }
+
+        try
+        {
+            var session = await authenticationService.CompleteSignInAsync(Code);
+            if (session is null)
+            {
+                Error = "Keycloak session could not be resolved.";
+                return;
+            }
+
+            var hydratedSession = await AccountSessionHydrator.HydrateAsync();
+            if (hydratedSession?.CurrentAccount is null || hydratedSession.CurrentAccount.Id == Guid.Empty)
+            {
+                Error = "CoreServices account session could not be loaded.";
+                return;
+            }
+
+            var sessionStore = Services.GetService(typeof(IKeycloakSessionStore)) as IKeycloakSessionStore;
+            if (sessionStore is not null)
+            {
+                await sessionStore.SetSessionAsync(hydratedSession);
+            }
+
+            var returnUrl = await JSRuntime.InvokeAsync<string?>("xn1financeAuthStorage.getItem", "xn1finance.auth.returnUrl");
+            await JSRuntime.InvokeVoidAsync("xn1financeAuthStorage.removeItem", "xn1finance.auth.returnUrl");
+
+            NavigationManager.NavigateTo(string.IsNullOrWhiteSpace(returnUrl) ? "/finance/portfolio-management" : returnUrl, forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            Error = $"Sign-in could not be completed. {ex.Message}";
+        }
+    }
+}

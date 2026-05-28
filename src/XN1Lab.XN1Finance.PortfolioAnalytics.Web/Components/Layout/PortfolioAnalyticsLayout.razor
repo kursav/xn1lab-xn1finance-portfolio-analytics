@@ -1,0 +1,71 @@
+@inherits LocalizedPlatformLayoutBase
+@implements IDisposable
+@inject PortfolioAnalyticsModuleRegistry ModuleRegistry
+@inject PlatformModuleAccessFilter ModuleAccessFilter
+
+<AppShell Title="@ApplicationContext.AppName"
+          Subtitle="@ApplicationContext.AppKey"
+          Branding="@BrandingProfile"
+          CurrentAccount="@CurrentAccount"
+          MenuSidebar="true">
+    <Sidebar>
+        @SidebarContent
+    </Sidebar>
+    <ChildContent>
+        @Body
+    </ChildContent>
+</AppShell>
+
+@code {
+    private AccountBrandingProfile? BrandingProfile { get; set; }
+    private IReadOnlyList<PlatformNavigationItem> NavigationItems =>
+        ModuleAccessFilter
+            .GetVisibleModules(ModuleRegistry.GetModules(), CurrentAccount)
+            .Select(static module => module.ToNavigationItem())
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        if (AccountSessionService is not null)
+        {
+            AccountSessionService.SessionChanged += OnAccountSessionChanged;
+        }
+
+        BrandingProfile = await BrandingState.GetOrResolveAsync(CurrentAccount);
+    }
+
+    public void Dispose()
+    {
+        if (AccountSessionService is not null)
+        {
+            AccountSessionService.SessionChanged -= OnAccountSessionChanged;
+        }
+    }
+
+    private void OnAccountSessionChanged(object? sender, AccountSessionChangedEventArgs e)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            BrandingProfile = await BrandingState.GetOrResolveAsync(CurrentAccount);
+            StateHasChanged();
+        });
+    }
+
+    private RenderFragment SidebarContent => @<PlatformNavigationMenu Items="@NavigationItems"
+                                                                      LoginHref="auth/login"
+                                                                      LogoutHref="auth/logout">
+        <HeaderContent>
+            <div class="xn1-platform-navigation-brand">
+                <div class="xn1-platform-navigation-brand-mark">
+                    <i class="chart line large icon"></i>
+                </div>
+                <div class="xn1-platform-navigation-brand-copy">
+                    <div class="xn1-platform-navigation-brand-title">@ApplicationContext.AppName</div>
+                    <div class="xn1-platform-navigation-brand-subtitle">@ApplicationContext.AppKey</div>
+                </div>
+            </div>
+        </HeaderContent>
+    </PlatformNavigationMenu>;
+
+}

@@ -1,0 +1,18 @@
+@page "/"
+@page "/finance/portfolio"
+@attribute [Authorize]
+@inject NavigationManager NavigationManager
+
+<PageTitle>Portfolio Management</PageTitle>
+
+<WorkspacePage>
+    <WorkspacePageContent>
+        <div class="ui active inline loader"></div>
+        <span>Opening portfolio management...</span>
+    </WorkspacePageContent>
+</WorkspacePage>
+
+@code {
+    protected override void OnInitialized() =>
+        NavigationManager.NavigateTo("/finance/portfolio-management/portfolios", replace: true);
+}

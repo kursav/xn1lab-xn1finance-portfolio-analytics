@@ -1,0 +1,38 @@
+@inject IConfiguration Configuration
+@inject NavigationManager NavigationManager
+
+<LayoutView Layout="@typeof(PortfolioAnalyticsLayout)">
+    <div class="ui raised very padded text segment">
+        <div class="ui small header">Authentication required</div>
+        <p>This page requires an authenticated session.</p>
+
+        @if (ShouldAutoRedirect)
+        {
+            <div class="ui active inline loader"></div>
+            <span>You are being redirected to sign in...</span>
+        }
+        else
+        {
+            <a class="ui primary button" href="@LoginUrl">Sign in</a>
+        }
+    </div>
+</LayoutView>
+
+@code {
+    private bool ShouldAutoRedirect =>
+        string.Equals(Configuration["Authentication:Provider"], "Keycloak", StringComparison.OrdinalIgnoreCase);
+
+    private string LoginUrl =>
+        $"/auth/login?returnUrl={Uri.EscapeDataString(NavigationManager.ToBaseRelativePath(NavigationManager.Uri))}";
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender || !ShouldAutoRedirect)
+        {
+            return;
+        }
+
+        NavigationManager.NavigateTo(LoginUrl, forceLoad: true);
+    }
+}
+

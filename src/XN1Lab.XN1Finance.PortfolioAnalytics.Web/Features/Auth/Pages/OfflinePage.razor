@@ -1,0 +1,28 @@
+@page "/offline"
+@inject NavigationManager NavigationManager
+
+<PageTitle>Service unavailable</PageTitle>
+
+<div class="ui raised very padded text segment">
+    <div class="ui warning message">
+        <div class="header">Service unavailable</div>
+        <p>XN1Finance Portfolio Analytics could not reach the CoreServices client resolution endpoint.</p>
+    </div>
+
+    <div class="ui buttons">
+        <button type="button" class="ui primary button" @onclick="TryAgain">Try again</button>
+        <button type="button" class="ui button" @onclick="GoHome">Back to workspace</button>
+    </div>
+</div>
+
+@code {
+    private void TryAgain()
+    {
+        NavigationManager.NavigateTo("/auth/login", forceLoad: true);
+    }
+
+    private void GoHome()
+    {
+        NavigationManager.NavigateTo("/finance/portfolio-management", forceLoad: true);
+    }
+}

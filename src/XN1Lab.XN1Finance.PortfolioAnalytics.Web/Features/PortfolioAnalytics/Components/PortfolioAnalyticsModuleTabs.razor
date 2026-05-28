@@ -1,0 +1,131 @@
+@inherits PlatformComponentBase
+@inject NavigationManager Navigation
+
+@if (VisibleTabs.Count > 0)
+{
+    <div class="ui secondary pointing menu">
+        @foreach (var item in VisibleTabs)
+        {
+            <a class="@BuildItemClass(item)"
+               href="@item.Href">
+                @if (!string.IsNullOrWhiteSpace(item.Icon))
+                {
+                    <i class="@($"{item.Icon} icon")"></i>
+                }
+                @item.Text
+            </a>
+        }
+    </div>
+}
+
+@code {
+    private const string ModuleRoute = "/finance/portfolio-management";
+    private const string LegacyModuleRoute = "/finance/portfolio";
+
+    private static readonly IReadOnlyList<PortfolioManagementRootTab> RootTabs =
+    [
+        new(
+            "portfolios",
+            "Portfolios",
+            "/finance/portfolio-management/portfolios",
+            "briefcase",
+            [PortfolioAnalyticsPermissions.Read],
+            IsDefault: true),
+        new(
+            "settings",
+            "Settings",
+            "/finance/portfolio-management/settings",
+            "setting",
+            [PortfolioAnalyticsPermissions.Write]),
+        new(
+            "macro-calendar",
+            "Macro Calendar",
+            "/finance/portfolio-management/macro/calendar",
+            "calendar alternate outline",
+            [PortfolioAnalyticsPermissions.MacroDataRead]),
+        new(
+            "scenario-lab",
+            "Scenario Lab",
+            "/finance/portfolio-management/scenario",
+            "sliders horizontal",
+            [
+                PortfolioAnalyticsPermissions.Read,
+                PortfolioAnalyticsPermissions.MacroDataRead,
+                PortfolioAnalyticsPermissions.ScenarioRun
+            ])
+    ];
+
+    private IReadOnlyList<PortfolioManagementRootTab> VisibleTabs =>
+        RootTabs
+            .Where(HasTabAccess)
+            .ToList();
+
+    private string CurrentPath
+    {
+        get
+        {
+            var relativePath = Navigation.ToBaseRelativePath(Navigation.Uri);
+            var queryIndex = relativePath.IndexOfAny(new[] { '?', '#' });
+            if (queryIndex >= 0)
+            {
+                relativePath = relativePath[..queryIndex];
+            }
+
+            relativePath = relativePath.Trim('/');
+            var path = string.IsNullOrWhiteSpace(relativePath)
+                ? ModuleRoute
+                : $"/{relativePath}";
+
+            return NormalizeLegacyPath(path);
+        }
+    }
+
+    private bool HasTabAccess(PortfolioManagementRootTab tab) =>
+        tab.RequiredPermissions.Count == 0 ||
+        HasAllPermissions(tab.RequiredPermissions);
+
+    private string BuildItemClass(PortfolioManagementRootTab item) =>
+        IsActive(item)
+            ? "active item"
+            : "item";
+
+    private bool IsActive(PortfolioManagementRootTab tab)
+    {
+        var currentPath = CurrentPath.TrimEnd('/');
+        var href = tab.Href.TrimEnd('/');
+
+        if (tab.IsDefault &&
+            string.Equals(currentPath, ModuleRoute, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return string.Equals(currentPath, href, StringComparison.OrdinalIgnoreCase) ||
+               currentPath.StartsWith($"{href}/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeLegacyPath(string path)
+    {
+        var normalizedPath = path.TrimEnd('/');
+
+        if (string.Equals(normalizedPath, LegacyModuleRoute, StringComparison.OrdinalIgnoreCase))
+        {
+            return ModuleRoute;
+        }
+
+        if (normalizedPath.StartsWith($"{LegacyModuleRoute}/", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{ModuleRoute}{normalizedPath[LegacyModuleRoute.Length..]}";
+        }
+
+        return normalizedPath.Length == 0 ? ModuleRoute : normalizedPath;
+    }
+
+    private sealed record PortfolioManagementRootTab(
+        string Key,
+        string Text,
+        string Href,
+        string Icon,
+        IReadOnlyList<string> RequiredPermissions,
+        bool IsDefault = false);
+}

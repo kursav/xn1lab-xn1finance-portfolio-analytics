@@ -1,0 +1,42 @@
+@page "/auth/login"
+@inject XN1Lab.Platform.Identity.Abstractions.IAccountIdentityProvider AuthenticationService
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Login</PageTitle>
+
+<div class="ui raised very padded text segment">
+    <div class="ui active inline loader"></div>
+    <span>Sign-in flow is starting...</span>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrl { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        var targetUrl = NormalizeReturnUrl(ReturnUrl);
+        await JSRuntime.InvokeVoidAsync("xn1financeAuthStorage.setItem", "xn1finance.auth.returnUrl", targetUrl);
+        await AuthenticationService.SignInAsync();
+        if (AuthenticationService is not XN1Lab.Platform.Identity.Keycloak.Abstractions.IKeycloakAuthenticationService)
+        {
+            NavigationManager.NavigateTo(targetUrl, forceLoad: true);
+        }
+    }
+
+    private static string NormalizeReturnUrl(string? returnUrl)
+    {
+        if (string.IsNullOrWhiteSpace(returnUrl))
+        {
+            return "/finance/portfolio-management";
+        }
+
+        return returnUrl.StartsWith("/", StringComparison.Ordinal) ? returnUrl : $"/{returnUrl}";
+    }
+}

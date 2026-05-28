@@ -1,0 +1,28 @@
+@page "/auth/session-error"
+@inject NavigationManager NavigationManager
+
+<PageTitle>Session Error</PageTitle>
+
+<div class="ui raised very padded text segment">
+    <div class="ui negative message">
+        <div class="header">Unexpected sign-in problem</div>
+        <p>We could not load your account after authentication. Please try again. If the problem continues, contact an administrator.</p>
+    </div>
+
+    <div class="ui buttons">
+        <button class="ui primary button" @onclick="TryAgain">Try again</button>
+        <button class="ui button" @onclick="GoHome">Back to workspace</button>
+    </div>
+</div>
+
+@code {
+    private void TryAgain()
+    {
+        NavigationManager.NavigateTo("/auth/login", forceLoad: true);
+    }
+
+    private void GoHome()
+    {
+        NavigationManager.NavigateTo("/finance/portfolio-management", forceLoad: true);
+    }
+}

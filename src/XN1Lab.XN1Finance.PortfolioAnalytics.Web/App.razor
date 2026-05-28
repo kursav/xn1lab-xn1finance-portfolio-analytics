@@ -1,0 +1,138 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@using XN1Lab.Platform.Api.Abstractions
+@implements IDisposable
+@inject PortfolioAnalyticsModuleRegistry ModuleRegistry
+@inject PlatformModuleAccessFilter ModuleAccessFilter
+@inject ICurrentAccountAccessor CurrentAccountAccessor
+@inject IAccountSessionService AccountSessionService
+@inject IConfiguration Configuration
+@inject NavigationManager NavigationManager
+
+<CascadingAuthenticationState>
+    <Router AppAssembly="@typeof(App).Assembly">
+        <Found Context="routeData">
+            @if (IsAccessCheckPending())
+            {
+                <LayoutView Layout="@typeof(PortfolioAnalyticsLayout)">
+                    <AccessCheckingView />
+                </LayoutView>
+            }
+            else if (CurrentRouteHasAccess())
+            {
+                <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(PortfolioAnalyticsLayout)">
+                    <Authorizing>
+                        <LayoutView Layout="@typeof(PortfolioAnalyticsLayout)">
+                            <AccessCheckingView />
+                        </LayoutView>
+                    </Authorizing>
+                    <NotAuthorized>
+                        <AuthRequiredView />
+                    </NotAuthorized>
+                </AuthorizeRouteView>
+            }
+            else
+            {
+                <LayoutView Layout="@typeof(PortfolioAnalyticsLayout)">
+                    <AccessDeniedView />
+                </LayoutView>
+            }
+            <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+        </Found>
+        <NotFound>
+            <PageTitle>Not found</PageTitle>
+            @if (CurrentPathModule() is not null)
+            {
+                if (CurrentAccountAccessor.Current is null)
+                {
+                    <AuthRequiredView />
+                }
+                else
+                {
+                    <LayoutView Layout="@typeof(PortfolioAnalyticsLayout)">
+                        <AccessDeniedView />
+                    </LayoutView>
+                }
+            }
+            else
+            {
+                <LayoutView Layout="@typeof(PortfolioAnalyticsLayout)">
+                    <div class="ui basic segment">Page not found.</div>
+                </LayoutView>
+            }
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>
+
+@code {
+    protected override void OnInitialized()
+    {
+        AccountSessionService.SessionChanged += OnAccountSessionChanged;
+    }
+
+    public void Dispose()
+    {
+        AccountSessionService.SessionChanged -= OnAccountSessionChanged;
+    }
+
+    private void OnAccountSessionChanged(object? sender, AccountSessionChangedEventArgs e)
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private bool CurrentRouteHasAccess()
+    {
+        var module = CurrentPathModule();
+        return module is null ||
+               CurrentAccountAccessor.Current is null ||
+               ModuleAccessFilter.HasAccess(module, CurrentAccountAccessor.Current);
+    }
+
+    private bool IsAccessCheckPending()
+    {
+        if (!string.Equals(Configuration["Authentication:Provider"], "Keycloak", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var session = AccountSessionService.CurrentSession;
+        if (CurrentAccountAccessor.Current is null || session is null)
+        {
+            return false;
+        }
+
+        return session.Claims is null ||
+               !session.Claims.TryGetValue(CoreServicesAccountSessionClaims.HydratedKey, out var hydratedBy) ||
+               !string.Equals(hydratedBy, CoreServicesAccountSessionClaims.HydratedValue, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private PlatformModuleManifest? CurrentPathModule()
+    {
+        var path = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        var queryStart = path.IndexOfAny(['?', '#']);
+        if (queryStart >= 0)
+        {
+            path = path[..queryStart];
+        }
+
+        return ModuleAccessFilter.FindRouteModule(ModuleRegistry.GetModules(), NormalizeLegacyPortfolioPath(path));
+    }
+
+    private static string NormalizeLegacyPortfolioPath(string path)
+    {
+        const string legacyModuleRoute = "finance/portfolio";
+        const string moduleRoute = "finance/portfolio-management";
+
+        path = path.Trim().Trim('/');
+        if (string.Equals(path, legacyModuleRoute, StringComparison.OrdinalIgnoreCase))
+        {
+            return moduleRoute;
+        }
+
+        if (path.StartsWith($"{legacyModuleRoute}/", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{moduleRoute}/{path[(legacyModuleRoute.Length + 1)..]}";
+        }
+
+        return path;
+    }
+}
