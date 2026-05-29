@@ -303,6 +303,20 @@
                     <span>This child surface will use the same table, filter and CRUD flyout pattern.</span>
                 </div>
                 break;
+            case PortfolioEntitySection.Earnings:
+                if (IsCreateMode)
+                {
+                    <div class="xn1-workspace-entity-section-empty">
+                        <i class="calendar check outline icon"></i>
+                        <strong>Save the portfolio first.</strong>
+                        <span>Earnings events can be reviewed after the root portfolio exists.</span>
+                    </div>
+                }
+                else
+                {
+                    <PortfolioEarningsWorkspace Portfolio="@EditModel" />
+                }
+                break;
             default:
                 <EditForm Model="EditModel" OnValidSubmit="SavePortfolioAsync">
                     <DataAnnotationsValidator />
@@ -358,6 +372,11 @@
                                            Active="@IsEntitySectionActive(PortfolioEntitySection.Exposure)"
                                            Disabled="@IsCreateMode"
                                            OnClick="@(_ => ShowEntitySectionAsync(PortfolioEntitySection.Exposure))" />
+            <WorkspaceEntityFlyoutMenuItem Icon="calendar check outline"
+                                           Text="Earnings"
+                                           Active="@IsEntitySectionActive(PortfolioEntitySection.Earnings)"
+                                           Disabled="@IsCreateMode"
+                                           OnClick="@(_ => ShowEntitySectionAsync(PortfolioEntitySection.Earnings))" />
         </WorkspaceEntityFlyoutMenu>
     </FooterNavigation>
 </WorkspaceEntityFlyout>
@@ -758,6 +777,7 @@
     {
         Details,
         Holdings,
-        Exposure
+        Exposure,
+        Earnings
     }
 }

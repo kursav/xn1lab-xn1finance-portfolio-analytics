@@ -253,6 +253,25 @@ public sealed class ApiPortfolioAnalyticsService(IPlatformApiClient apiClient) :
             cancellationToken: cancellationToken);
     }
 
+    public async Task<IReadOnlyList<PortfolioEarningsEventContract>> GetPortfolioEarningsAsync(
+        Guid portfolioId,
+        DateTime? fromUtc = null,
+        DateTime? toUtc = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new Dictionary<string, string?>
+        {
+            ["fromUtc"] = fromUtc?.ToUniversalTime().ToString("O"),
+            ["toUtc"] = toUtc?.ToUniversalTime().ToString("O")
+        };
+
+        return await _apiClient.GetAsync<List<PortfolioEarningsEventContract>>(
+            $"{BasePath}/portfolios/{portfolioId}/earnings",
+            query,
+            cancellationToken: cancellationToken)
+            ?? [];
+    }
+
     public async Task<PortfolioScenarioRunResultContract?> RunPortfolioScenarioAsync(
         Guid portfolioId,
         PortfolioScenarioRunRequestContract request,
@@ -346,6 +365,28 @@ public sealed class ApiPortfolioAnalyticsService(IPlatformApiClient apiClient) :
 
         return await _apiClient.GetAsync<List<MacroCalendarEventContract>>(
             $"{BasePath}/macro/calendar",
+            query,
+            cancellationToken: cancellationToken)
+            ?? [];
+    }
+
+    public async Task<IReadOnlyList<SecurityEarningsEventContract>> GetEarningsCalendarAsync(
+        DateTime? fromUtc = null,
+        DateTime? toUtc = null,
+        string? symbol = null,
+        string? sectorKey = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new Dictionary<string, string?>
+        {
+            ["fromUtc"] = fromUtc?.ToUniversalTime().ToString("O"),
+            ["toUtc"] = toUtc?.ToUniversalTime().ToString("O"),
+            ["symbol"] = string.IsNullOrWhiteSpace(symbol) ? null : symbol.Trim(),
+            ["sectorKey"] = string.IsNullOrWhiteSpace(sectorKey) ? null : sectorKey.Trim()
+        };
+
+        return await _apiClient.GetAsync<List<SecurityEarningsEventContract>>(
+            $"{BasePath}/earnings/calendar",
             query,
             cancellationToken: cancellationToken)
             ?? [];

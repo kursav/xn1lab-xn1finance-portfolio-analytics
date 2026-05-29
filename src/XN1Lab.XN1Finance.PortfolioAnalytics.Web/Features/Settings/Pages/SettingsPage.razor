@@ -156,18 +156,22 @@
                                             </div>
                                         </div>
 
-                                        <div class="three fields">
+                                        <div class="four fields">
                                             <div class="field">
                                                 <label>Interval minutes</label>
                                                 <InputNumber class="ui input" @bind-Value="SystemSettings.RefreshIntervalMinutes" />
                                             </div>
                                             <div class="field">
-                                                <label>Lookback days</label>
+                                                <label>Macro lookback days</label>
                                                 <InputNumber class="ui input" @bind-Value="SystemSettings.MacroReleaseLookbackDays" />
                                             </div>
                                             <div class="field">
-                                                <label>Lookahead days</label>
+                                                <label>Macro lookahead days</label>
                                                 <InputNumber class="ui input" @bind-Value="SystemSettings.MacroReleaseLookaheadDays" />
+                                            </div>
+                                            <div class="field">
+                                                <label>Earnings lookahead days</label>
+                                                <InputNumber class="ui input" @bind-Value="SystemSettings.EarningsCalendarLookaheadDays" />
                                             </div>
                                         </div>
 
@@ -189,6 +193,12 @@
                                                 <div class="ui checkbox">
                                                     <InputCheckbox @bind-Value="SystemSettings.MacroReleaseRefreshEnabled" />
                                                     <label>Releases</label>
+                                                </div>
+                                            </div>
+                                            <div class="field">
+                                                <div class="ui checkbox">
+                                                    <InputCheckbox @bind-Value="SystemSettings.EarningsRefreshEnabled" />
+                                                    <label>Earnings</label>
                                                 </div>
                                             </div>
                                         </div>

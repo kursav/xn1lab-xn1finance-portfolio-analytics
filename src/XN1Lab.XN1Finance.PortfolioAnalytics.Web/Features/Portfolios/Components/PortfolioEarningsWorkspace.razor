@@ -1,0 +1,263 @@
+@using XN1Lab.Platform.Api.Exceptions
+@using XN1Lab.Platform.CoreServices.Contracts.PortfolioAnalytics
+@inject IPortfolioAnalyticsService PortfolioAnalyticsService
+
+<WorkspacePageListTable Compact="true">
+    <thead>
+        <tr>
+            <th colspan="12">
+                <div class="ui stackable middle aligned grid">
+                    <div class="ten wide column">
+                        <div class="ui small header">
+                            <i class="calendar check outline icon"></i>
+                            Earnings calendar
+                            @if (Portfolio is not null)
+                            {
+                                <div class="sub header">@Portfolio.Name</div>
+                            }
+                        </div>
+                    </div>
+                    <div class="six wide right aligned column">
+                        <button type="button"
+                                class="@($"ui icon button {(IsLoading ? "loading disabled" : string.Empty)}")"
+                                title="Refresh"
+                                disabled="@IsLoading"
+                                @onclick="LoadEarningsAsync">
+                            <i class="refresh icon"></i>
+                        </button>
+                    </div>
+                </div>
+            </th>
+        </tr>
+        <tr>
+            <th>Signal</th>
+            <th>Symbol</th>
+            <th>Company</th>
+            <th>Report date</th>
+            <th>Fiscal period</th>
+            <th class="right aligned">EPS estimate</th>
+            <th class="right aligned">EPS actual</th>
+            <th class="right aligned">EPS surprise</th>
+            <th class="right aligned">Revenue</th>
+            <th class="right aligned">Rev surprise</th>
+            <th class="right aligned">Exposure</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody>
+        @if (IsLoading)
+        {
+            <tr>
+                <td colspan="12">
+                    <Loader Text="Loading earnings events" />
+                </td>
+            </tr>
+        }
+        else if (!string.IsNullOrWhiteSpace(ErrorMessage))
+        {
+            <tr>
+                <td colspan="12">
+                    <div class="ui warning message">@ErrorMessage</div>
+                </td>
+            </tr>
+        }
+        else if (Items.Count == 0)
+        {
+            <tr>
+                <td colspan="12">
+                    <EmptyState Icon="calendar check outline" Title="No upcoming earnings found" />
+                </td>
+            </tr>
+        }
+        else
+        {
+            @foreach (var item in Items)
+            {
+                <tr>
+                    <td>
+                        <span class="@BuildSignalLabelClass(item.SignalSeverity)">
+                            @BuildSignalText(item)
+                        </span>
+                    </td>
+                    <td>
+                        <strong>@item.Symbol</strong>
+                        @if (!string.IsNullOrWhiteSpace(item.ExchangeCode))
+                        {
+                            <div class="meta">@item.ExchangeCode</div>
+                        }
+                    </td>
+                    <td>
+                        @item.InstrumentName
+                        @if (!string.IsNullOrWhiteSpace(item.SectorName))
+                        {
+                            <div class="meta">@item.SectorName</div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(item.ReportPeriod))
+                        {
+                            <div class="meta">@item.ReportPeriod</div>
+                        }
+                    </td>
+                    <td>@FormatDate(item.ReportDateUtc)</td>
+                    <td>@FormatDate(item.FiscalDateEndingUtc)</td>
+                    <td class="right aligned">@FormatDecimal(item.EstimateEps)</td>
+                    <td class="right aligned">@FormatDecimal(item.ActualEps)</td>
+                    <td class="@BuildSurpriseCellClass(item.EpsSurprise)">@FormatSignedDecimal(item.EpsSurprise)</td>
+                    <td class="right aligned">@FormatMoney(item.ActualRevenue, item.Currency)</td>
+                    <td class="@BuildSurpriseCellClass(item.RevenueSurprise)">@FormatSignedMoney(item.RevenueSurprise, item.Currency)</td>
+                    <td class="right aligned">
+                        @FormatMoney(item.ExposureValue, Portfolio?.BaseCurrency)
+                        <div class="meta">@FormatPercent(item.ExposurePercent)</div>
+                    </td>
+                    <td>
+                        @item.Status
+                        @if (item.EarningsReportId.HasValue)
+                        {
+                            <div class="meta">Reported</div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(item.ReportSourceUrl))
+                        {
+                            <a class="meta" href="@item.ReportSourceUrl" target="_blank" rel="noopener noreferrer">Source</a>
+                        }
+                    </td>
+                </tr>
+            }
+        }
+    </tbody>
+</WorkspacePageListTable>
+
+@code {
+    [Parameter]
+    public PortfolioContract? Portfolio { get; set; }
+
+    private Guid? LoadedPortfolioId { get; set; }
+    private List<PortfolioEarningsEventContract> Items { get; set; } = [];
+    private bool IsLoading { get; set; }
+    private string? ErrorMessage { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Portfolio is null || Portfolio.Id == Guid.Empty)
+        {
+            Items = [];
+            LoadedPortfolioId = null;
+            return;
+        }
+
+        if (Portfolio.Id == LoadedPortfolioId)
+        {
+            return;
+        }
+
+        await LoadEarningsAsync();
+    }
+
+    private async Task LoadEarningsAsync()
+    {
+        if (Portfolio is null || Portfolio.Id == Guid.Empty)
+        {
+            Items = [];
+            LoadedPortfolioId = null;
+            return;
+        }
+
+        IsLoading = true;
+        ErrorMessage = null;
+
+        try
+        {
+            Items = (await PortfolioAnalyticsService.GetPortfolioEarningsAsync(
+                    Portfolio.Id,
+                    DateTime.UtcNow.Date,
+                    DateTime.UtcNow.Date.AddDays(90)))
+                .OrderBy(item => item.ReportDateUtc)
+                .ThenByDescending(item => item.ExposurePercent ?? 0m)
+                .ThenBy(item => item.Symbol)
+                .ToList();
+            LoadedPortfolioId = Portfolio.Id;
+        }
+        catch (PlatformApiException ex)
+        {
+            ErrorMessage = string.IsNullOrWhiteSpace(ex.RemoteMessage) ? ex.Message : ex.RemoteMessage;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private static string BuildSignalLabelClass(string? severity)
+    {
+        return severity?.ToLowerInvariant() switch
+        {
+            "danger" => "ui red label",
+            "warning" => "ui orange label",
+            "info" => "ui blue label",
+            _ => "ui basic label"
+        };
+    }
+
+    private static string BuildSignalText(PortfolioEarningsEventContract item)
+    {
+        if (item.DaysUntilReport < 0)
+        {
+            return "Past";
+        }
+
+        return item.DaysUntilReport == 0
+            ? "Today"
+            : $"{item.DaysUntilReport}d";
+    }
+
+    private static string FormatDate(DateTime? value)
+    {
+        return value.HasValue && value.Value != default
+            ? value.Value.ToLocalTime().ToString("d")
+            : "-";
+    }
+
+    private static string FormatDecimal(decimal? value)
+    {
+        return value.HasValue ? value.Value.ToString("N2") : "-";
+    }
+
+    private static string FormatSignedDecimal(decimal? value)
+    {
+        return value.HasValue ? value.Value.ToString("+0.00;-0.00;0.00") : "-";
+    }
+
+    private static string FormatPercent(decimal? value)
+    {
+        return value.HasValue ? $"{value.Value:N2}%" : "-";
+    }
+
+    private static string FormatMoney(decimal? value, string? currency)
+    {
+        return value.HasValue
+            ? $"{value.Value:N2} {NormalizeCurrency(currency)}"
+            : "-";
+    }
+
+    private static string FormatSignedMoney(decimal? value, string? currency)
+    {
+        return value.HasValue
+            ? $"{value.Value:+#,0.00;-#,0.00;0.00} {NormalizeCurrency(currency)}"
+            : "-";
+    }
+
+    private static string BuildSurpriseCellClass(decimal? value)
+    {
+        if (!value.HasValue || value.Value == 0)
+        {
+            return "right aligned";
+        }
+
+        return value.Value > 0
+            ? "right aligned positive"
+            : "right aligned negative";
+    }
+
+    private static string NormalizeCurrency(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "USD" : value.Trim().ToUpperInvariant();
+    }
+}

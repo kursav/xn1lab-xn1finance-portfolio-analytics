@@ -25,6 +25,7 @@ Implemented baseline:
 - market data provider abstraction with no-op and Alpha Vantage providers
 - market data persistence tables for latest prices, daily bars, FX rates, and portfolio valuation snapshots
 - market refresh job path that writes Alpha Vantage quotes and daily bars into Portfolio Analytics storage when explicitly enabled
+- earnings calendar persistence, provider refresh, API, and portfolio child tab first slice
 - settings page wired through product-local service and `IPlatformApiClient`
 - portfolio holding editor UI with instrument lookup and sector mapping fill
 - exposure API with asset class, sector, currency, and single-name buckets valued from latest market price when available
@@ -36,11 +37,16 @@ Implemented baseline:
 Last verified builds:
 
 ```text
+Date: 2026-05-29 Europe/Vienna
+
+dotnet build XN1Lab.Platform.sln -c Debug
+Result: succeeded, 0 warnings, 0 errors
+
 dotnet build XN1Lab.CoreServices.sln -c Debug
 Result: succeeded, 0 warnings, 0 errors
 
 dotnet build XN1Lab.XN1Finance.PortfolioAnalytics.sln -c Debug
-Result: succeeded, file-lock/access warnings from running local server, 0 errors
+Result: succeeded, 0 warnings, 0 errors
 ```
 
 ## 2. Progress Matrix
@@ -65,14 +71,20 @@ Result: succeeded, file-lock/access warnings from running local server, 0 errors
 | PA-016 | P1 | Done | FRED macro provider adapter | Added `fred` macro provider for historical macro observations. Reads API key from `FRED_API_KEY` or secret config; no key is stored in repo. |
 | PA-017 | P1 | Done | Alpha Vantage market provider adapter | Added `alpha-vantage` market provider for symbol search, latest quote, and daily bars. Reads API key from `ALPHA_VANTAGE_API_KEY` or secret config; no key is stored in repo. |
 | PA-018 | P0 | Done | Portfolio Analytics identity client alignment | Product host now uses CoreServices client resolution only. Static short `ClientId` fallback was removed from the Keycloak provider path, and CoreServices seed no longer creates the short application key as a legacy Keycloak client id. Required Keycloak client id is `895ed50b-c808-4f5f-9bb4-2fc6175592bc.xn1finance.portfolio-analytics.web`. |
+| PA-019 | P1 | Done | Earnings calendar persistence model | Added security earnings event contracts, domain models, DB table/schema seed, provider upsert path, and portfolio-enriched read model. |
+| PA-020 | P1 | Done | Alpha Vantage earnings calendar adapter | Extended `alpha-vantage` provider with `EARNINGS_CALENDAR`, CSV parsing, refresh options, and refresh job persistence. |
+| PA-021 | P1 | Done | Portfolio earnings UI child tab | Added selected-portfolio earnings child tab in the Portfolio flyout with colored date/severity signal, EPS estimate, and exposure context. |
+| PA-022 | P2 | Todo | Portfolio list earnings summary badges | Add next-event summary per portfolio after the child tab/API path is stable. |
+| PA-023 | P1 | Done | Earnings actual report persistence model | Added `SecurityEarningsReport` as the post-release actual-result entity/table under the existing PortfolioAnalytics database. Portfolio earnings responses now merge schedule data with actual EPS/revenue surprise fields when a report exists. |
 
 ## 3. Recommended Execution Order
 
 1. Implement `PA-005` permission-aware UI states.
-2. Implement macro calendar and scenario UI pages.
-3. Add FX conversion and country/region exposure support.
-4. Implement `PA-006` platform-compliant feedback.
-5. Add focused tests for API scope, permissions, refresh job, exposure math, warnings, and scenario calculations.
+2. Add a provider/job slice that imports actual earnings reports into `SecurityEarningsReport`.
+3. Add portfolio list earnings summary badges from `PA-022`.
+4. Add FX conversion and country/region exposure support.
+5. Implement `PA-006` platform-compliant feedback.
+6. Add focused tests for API scope, permissions, refresh job, exposure math, warnings, scenario calculations, and earnings refresh.
 
 ## 4. DB Smoke Test Checklist
 
@@ -96,6 +108,8 @@ Verify:
 - `xn1finance_security_instruments` exists
 - `xn1finance_latest_market_prices` exists
 - `xn1finance_market_price_bars` exists
+- `xn1finance_security_earnings_events` exists
+- `xn1finance_security_earnings_reports` exists
 - `xn1finance_fx_rates` exists
 - `xn1finance_portfolio_valuation_snapshots` exists
 - `xn1finance_macro_series` exists

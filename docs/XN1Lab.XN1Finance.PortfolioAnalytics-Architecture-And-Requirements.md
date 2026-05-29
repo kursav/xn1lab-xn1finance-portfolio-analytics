@@ -1674,14 +1674,19 @@ PUT    /api/xn1finance/portfolio-analytics/portfolios/{portfolioId}/holdings/{ho
 DELETE /api/xn1finance/portfolio-analytics/portfolios/{portfolioId}/holdings/{holdingId}
 
 GET    /api/xn1finance/portfolio-analytics/portfolios/{portfolioId}/exposure
+GET    /api/xn1finance/portfolio-analytics/portfolios/{portfolioId}/earnings
 POST   /api/xn1finance/portfolio-analytics/portfolios/{portfolioId}/scenarios/run
 
 GET    /api/xn1finance/portfolio-analytics/instruments
 GET    /api/xn1finance/portfolio-analytics/instruments/lookup?symbol={symbol}
+GET    /api/xn1finance/portfolio-analytics/instruments/external-search?searchText={searchText}
+GET    /api/xn1finance/portfolio-analytics/instruments/external-resolve?symbol={symbol}
 GET    /api/xn1finance/portfolio-analytics/instruments/{instrumentId}
 POST   /api/xn1finance/portfolio-analytics/instruments
 PUT    /api/xn1finance/portfolio-analytics/instruments/{instrumentId}
 DELETE /api/xn1finance/portfolio-analytics/instruments/{instrumentId}
+
+GET    /api/xn1finance/portfolio-analytics/earnings/calendar
 
 GET    /api/xn1finance/portfolio-analytics/macro/calendar
 GET    /api/xn1finance/portfolio-analytics/macro/series
@@ -1735,6 +1740,8 @@ Latest prices: xn1finance_latest_market_prices
 Daily/interval bars: xn1finance_market_price_bars
 FX rates: xn1finance_fx_rates
 Portfolio valuation snapshots: xn1finance_portfolio_valuation_snapshots
+Earnings calendar: xn1finance_security_earnings_events
+Earnings actual reports: xn1finance_security_earnings_reports
 ```
 
 Rules:
@@ -1750,8 +1757,39 @@ Rules:
 - releases are upserted by `(MacroSeriesId, ReleaseTimeUtc)`
 - latest prices are upserted by `(SecurityInstrumentId, ProviderKey)`
 - market price bars are upserted by `(SecurityInstrumentId, ProviderKey, Interval, BarTimeUtc)`
+- earnings events are upserted by `(SecurityInstrumentId, ProviderKey, ReportDateUtc)`
+- earnings reports are upserted by `SecurityEarningsEventId`
 - consensus surprise is calculated when both actual and consensus values exist
 - missing provider keys fall back to the no-op provider
+
+Earnings calendar model:
+
+```text
+SecurityEarningsEvent
+  - schedule/calendar record per security
+  - stores report date, fiscal period ending, EPS estimate, report time, currency, provider key, and received timestamp
+  - must remain focused on expected/reporting schedule data
+
+SecurityEarningsReport
+  - actual post-release report record per security earnings event
+  - stores actual EPS, EPS surprise, actual revenue, revenue estimate, revenue surprise, report period, source metadata, and optional raw provider payload
+  - belongs to one SecurityEarningsEvent and one SecurityInstrument
+  - must not be embedded into portfolio holdings because holdings represent position state, not market/reporting facts
+
+PortfolioEarningsEvent
+  - read model derived from SecurityEarningsEvent, optional SecurityEarningsReport, and portfolio exposure
+  - adds exposure value, exposure percent, days until report, UI severity, and actual report fields when available
+```
+
+Provider and refresh policy:
+
+- earnings calendar data is never queried directly from the Blazor client
+- CoreServices refreshes provider data into `xn1finance_security_earnings_events`
+- UI and scenario pages read only from CoreServices API
+- refresh job queries active stock instruments; ETFs/funds do not normally have company earnings dates
+- missing symbols can be filled by instrument lookup first, then picked up by the scheduled refresh
+- the default lookahead window is 90 days and can be changed through system settings
+- production jobs must respect the external provider plan and rate limits
 
 FRED provider configuration:
 
@@ -1789,7 +1827,9 @@ Alpha Vantage provider configuration:
     "Refresh": {
       "MarketDataProviderKey": "alpha-vantage",
       "RefreshMarketPrices": true,
+      "RefreshEarningsCalendar": true,
       "MarketPriceLookbackDays": 7,
+      "EarningsCalendarLookaheadDays": 90,
       "MaxMarketInstrumentsPerRun": 10
     },
     "Providers": {
@@ -1810,8 +1850,10 @@ Alpha Vantage first slice:
 - `SYMBOL_SEARCH` for instrument discovery
 - `GLOBAL_QUOTE` for latest quote
 - `TIME_SERIES_DAILY` for daily OHLCV bars
+- `EARNINGS_CALENDAR` for upcoming earnings announcement dates and EPS estimates
 - refresh job persists quotes to `xn1finance_latest_market_prices`
 - refresh job persists daily bars to `xn1finance_market_price_bars`
+- refresh job persists earnings dates to `xn1finance_security_earnings_events`
 - provider key: `alpha-vantage`
 - free-tier calls are rate limited; production SaaS must use a licensed plan before broad refresh jobs are enabled
 

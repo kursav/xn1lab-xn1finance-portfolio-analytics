@@ -44,6 +44,11 @@ public interface IPortfolioAnalyticsService
     Task<PortfolioExposureSnapshotContract?> GetPortfolioExposureAsync(
         Guid portfolioId,
         CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<PortfolioEarningsEventContract>> GetPortfolioEarningsAsync(
+        Guid portfolioId,
+        DateTime? fromUtc = null,
+        DateTime? toUtc = null,
+        CancellationToken cancellationToken = default);
     Task<PortfolioScenarioRunResultContract?> RunPortfolioScenarioAsync(
         Guid portfolioId,
         PortfolioScenarioRunRequestContract request,
@@ -68,6 +73,12 @@ public interface IPortfolioAnalyticsService
         MacroSeriesImportance? importance = null,
         string? countryCode = null,
         string? category = null,
+        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<SecurityEarningsEventContract>> GetEarningsCalendarAsync(
+        DateTime? fromUtc = null,
+        DateTime? toUtc = null,
+        string? symbol = null,
+        string? sectorKey = null,
         CancellationToken cancellationToken = default);
     Task<PortfolioAnalyticsAccountSettingsContract> GetAccountSettingsAsync(CancellationToken cancellationToken = default);
     Task<PortfolioAnalyticsAccountSettingsContract> SaveAccountSettingsAsync(
