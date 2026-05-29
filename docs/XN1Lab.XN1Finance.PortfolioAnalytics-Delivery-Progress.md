@@ -20,6 +20,7 @@ Implemented baseline:
 - account-scoped provider settings API
 - account-scoped provider request usage ledger
 - account-scoped provider usage summary API and Settings visibility
+- portfolio holdings latest-price sync action and holding-level P/L display
 - shared settings contracts
 - permission constants, permission seed definitions, and controller permission attributes
 - schema seed service for Portfolio Analytics tables
@@ -83,16 +84,16 @@ Result: succeeded, 0 warnings, 0 errors
 | PA-024 | P1 | Done | Account-scoped provider access settings | Added account-level provider settings contract/API/table/UI tab for FRED and Alpha Vantage keys plus request policy values. External instrument search now resolves Alpha Vantage credentials from the active account settings. |
 | PA-025 | P1 | Done | Account provider request ledger and daily limit enforcement | Added `xn1finance_portfolio_analytics_provider_request_usage`, backend usage increment/read methods, and daily limit enforcement before account-scoped Alpha Vantage external search/resolve calls. Interactive external requests now require an account market data API key. |
 | PA-026 | P1 | Done | Provider request usage visibility | Added account provider usage summary contract/API and Settings > Providers usage cards for used, remaining, and daily limit values. |
+| PA-027 | P1 | Done | Holding latest price sync and P/L display | Added a portfolio-level market price sync endpoint/button that refreshes selected holdings through the account provider policy. Holding rows now expose latest price, market value, and unrealized P/L from stored latest prices. |
 
 ## 3. Recommended Execution Order
 
 1. Implement `PA-005` permission-aware UI states.
-2. Add provider-aware cache policy for latest price refresh before showing holdings P/L.
-3. Add a provider/job slice that imports actual earnings reports into `SecurityEarningsReport`.
-4. Add portfolio list earnings summary badges from `PA-022`.
-5. Add FX conversion and country/region exposure support.
-6. Implement `PA-006` platform-compliant feedback.
-7. Add focused tests for API scope, permissions, refresh job, exposure math, warnings, scenario calculations, and earnings refresh.
+2. Add a provider/job slice that imports actual earnings reports into `SecurityEarningsReport`.
+3. Add portfolio list earnings summary badges from `PA-022`.
+4. Add FX conversion and country/region exposure support.
+5. Implement `PA-006` platform-compliant feedback.
+6. Add focused tests for API scope, permissions, refresh job, exposure math, warnings, scenario calculations, and earnings refresh.
 
 ## 4. DB Smoke Test Checklist
 

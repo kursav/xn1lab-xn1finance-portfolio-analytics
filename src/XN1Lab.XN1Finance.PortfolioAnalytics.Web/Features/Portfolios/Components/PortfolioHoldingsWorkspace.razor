@@ -36,6 +36,13 @@
                 <i class="plus icon"></i>
             </button>
             <button type="button"
+                    class="@($"ui icon button {BuildBusyClass(IsPriceSyncing, !Permissions.CanWriteMarketData || IsHoldingLoading)}")"
+                    title="Sync latest prices"
+                    disabled="@(!Permissions.CanWriteMarketData || IsHoldingLoading || IsPriceSyncing)"
+                    @onclick="SyncLatestPricesAsync">
+                <i class="sync alternate icon"></i>
+            </button>
+            <button type="button"
                     class="@($"ui icon button {(IsHoldingLoading ? "loading disabled" : string.Empty)}")"
                     title="Refresh"
                     disabled="@IsHoldingLoading"
@@ -48,6 +55,10 @@
     @if (!string.IsNullOrWhiteSpace(HoldingErrorMessage))
     {
         <div class="ui warning message">@HoldingErrorMessage</div>
+    }
+    else if (!string.IsNullOrWhiteSpace(PriceSyncMessage))
+    {
+        <div class="ui positive message">@PriceSyncMessage</div>
     }
 
     <WorkspacePageListTable Compact="true" Selectable="true">
@@ -62,6 +73,9 @@
                 <th>Sector</th>
                 <th class="right aligned">Quantity</th>
                 <th class="right aligned">Avg unit cost</th>
+                <th class="right aligned">Last price</th>
+                <th class="right aligned">Market value</th>
+                <th class="right aligned">P/L</th>
                 <th>Status</th>
                 <th class="right aligned">Actions</th>
             </tr>
@@ -70,7 +84,7 @@
             @if (IsHoldingLoading)
             {
                 <tr>
-                    <td colspan="7">
+                    <td colspan="10">
                         <Loader Text="Loading holdings" />
                     </td>
                 </tr>
@@ -78,7 +92,7 @@
             else if (HoldingPage.TotalItems == 0)
             {
                 <tr>
-                    <td colspan="7">
+                    <td colspan="10">
                         <EmptyState Icon="chart pie" Title="No holdings yet" />
                     </td>
                 </tr>
@@ -113,6 +127,23 @@
                         </td>
                         <td class="right aligned">@holding.Quantity.ToString("N4")</td>
                         <td class="right aligned">@FormatMoney(holding.AverageCost, holding.Currency)</td>
+                        <td class="right aligned">
+                            @FormatMoney(holding.LatestMarketPrice, holding.LatestMarketPriceCurrency ?? holding.Currency)
+                            @if (holding.LatestMarketPriceIsStale)
+                            {
+                                <div class="meta">stale</div>
+                            }
+                        </td>
+                        <td class="right aligned">@FormatMoney(holding.MarketValue, holding.LatestMarketPriceCurrency ?? holding.Currency)</td>
+                        <td class="right aligned">
+                            <span class="@BuildProfitLossClass(holding.UnrealizedProfitLoss)">
+                                @FormatMoney(holding.UnrealizedProfitLoss, holding.LatestMarketPriceCurrency ?? holding.Currency)
+                            </span>
+                            @if (holding.UnrealizedProfitLossPercent.HasValue)
+                            {
+                                <div class="meta">@FormatPercent(holding.UnrealizedProfitLossPercent)</div>
+                            }
+                        </td>
                         <td>@holding.Status</td>
                         <td class="right aligned">
                             <button type="button"
@@ -136,7 +167,7 @@
         </tbody>
         <tfoot>
             <tr>
-                <th colspan="7" class="right aligned">
+                <th colspan="10" class="right aligned">
                     @if (!IsHoldingLoading)
                     {
                         <PageListNumber T="PortfolioHoldingContract"
@@ -407,9 +438,11 @@
     private string? InstrumentSearchText { get; set; }
     private string? InstrumentMappingSourceSymbol { get; set; }
     private string? HoldingErrorMessage { get; set; }
+    private string? PriceSyncMessage { get; set; }
     private string? LookupMessage { get; set; }
     private bool IsHoldingLoading { get; set; }
     private bool IsHoldingSaving { get; set; }
+    private bool IsPriceSyncing { get; set; }
     private bool IsLookupLoading { get; set; }
     private bool IsHoldingFilterOpen { get; set; }
     private bool IsHoldingEditorOpen { get; set; }
@@ -475,6 +508,35 @@
         finally
         {
             IsHoldingLoading = false;
+        }
+    }
+
+    private async Task SyncLatestPricesAsync()
+    {
+        if (CurrentPortfolioId == Guid.Empty || !Permissions.CanWriteMarketData)
+        {
+            return;
+        }
+
+        IsPriceSyncing = true;
+        HoldingErrorMessage = null;
+        PriceSyncMessage = null;
+
+        try
+        {
+            var result = await PortfolioAnalyticsService.RefreshPortfolioMarketPricesAsync(CurrentPortfolioId);
+            PriceSyncMessage = string.IsNullOrWhiteSpace(result.Message)
+                ? $"{result.RefreshedSymbols} price{(result.RefreshedSymbols == 1 ? string.Empty : "s")} synchronized."
+                : result.Message;
+            await LoadHoldingsAsync();
+        }
+        catch (PlatformApiException ex)
+        {
+            HoldingErrorMessage = ResolveApiError(ex);
+        }
+        finally
+        {
+            IsPriceSyncing = false;
         }
     }
 
@@ -1005,6 +1067,21 @@
         return value.HasValue
             ? $"{value.Value:N4} {currency}"
             : "-";
+    }
+
+    private static string FormatPercent(decimal? value)
+    {
+        return value.HasValue ? $"{value.Value:N2}%" : "-";
+    }
+
+    private static string BuildProfitLossClass(decimal? value)
+    {
+        if (!value.HasValue || value.Value == 0m)
+        {
+            return string.Empty;
+        }
+
+        return value.Value > 0m ? "ui green text" : "ui red text";
     }
 
     private static string ResolveApiError(PlatformApiException ex)

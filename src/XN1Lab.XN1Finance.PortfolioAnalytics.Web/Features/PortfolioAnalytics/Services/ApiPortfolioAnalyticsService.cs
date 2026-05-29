@@ -244,6 +244,20 @@ public sealed class ApiPortfolioAnalyticsService(IPlatformApiClient apiClient) :
             cancellationToken: cancellationToken);
     }
 
+    public async Task<PortfolioMarketPriceRefreshResultContract> RefreshPortfolioMarketPricesAsync(
+        Guid portfolioId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _apiClient.PostAsync<object, PortfolioMarketPriceRefreshResultContract>(
+            $"{BasePath}/portfolios/{portfolioId}/market-prices/refresh",
+            new object(),
+            cancellationToken: cancellationToken)
+            ?? new PortfolioMarketPriceRefreshResultContract
+            {
+                PortfolioId = portfolioId
+            };
+    }
+
     public async Task<PortfolioExposureSnapshotContract?> GetPortfolioExposureAsync(
         Guid portfolioId,
         CancellationToken cancellationToken = default)

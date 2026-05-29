@@ -1947,6 +1947,14 @@ Account provider request usage:
 - exposes a read summary with `RequestCount`, `DailyRequestLimit`, and `RemainingRequests` for Settings UI visibility
 - requires an account market data API key before interactive external symbol resolution/search is allowed
 
+Holding price sync:
+
+- the holdings table reads latest price, market value, and unrealized P/L from CoreServices response fields
+- the UI must not call external providers while rendering rows
+- the selected portfolio has an explicit sync action that calls CoreServices and refreshes stored latest prices
+- the sync action respects account-scoped provider keys, max symbols per refresh, and daily request limits
+- the sync action requires market data write permission
+
 System settings:
 
 - stored in `xn1finance_portfolio_analytics_system_settings`
