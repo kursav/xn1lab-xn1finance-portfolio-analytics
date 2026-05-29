@@ -84,6 +84,14 @@ public interface IPortfolioAnalyticsService
     Task<PortfolioAnalyticsAccountSettingsContract> SaveAccountSettingsAsync(
         PortfolioAnalyticsAccountSettingsContract settings,
         CancellationToken cancellationToken = default);
+    Task<PortfolioAnalyticsAccountProviderSettingsContract> GetAccountProviderSettingsAsync(CancellationToken cancellationToken = default);
+    Task<PortfolioAnalyticsAccountProviderSettingsContract> SaveAccountProviderSettingsAsync(
+        PortfolioAnalyticsAccountProviderSettingsContract settings,
+        CancellationToken cancellationToken = default);
+    Task<PortfolioAnalyticsProviderRequestUsageContract> GetAccountProviderRequestUsageAsync(
+        string? providerKey = null,
+        DateTime? usageDateUtc = null,
+        CancellationToken cancellationToken = default);
     Task<PortfolioAnalyticsSystemSettingsContract> GetSystemSettingsAsync(CancellationToken cancellationToken = default);
     Task<PortfolioAnalyticsSystemSettingsContract> SaveSystemSettingsAsync(
         PortfolioAnalyticsSystemSettingsContract settings,

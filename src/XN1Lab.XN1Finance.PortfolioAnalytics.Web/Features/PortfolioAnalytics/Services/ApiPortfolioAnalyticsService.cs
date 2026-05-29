@@ -411,6 +411,46 @@ public sealed class ApiPortfolioAnalyticsService(IPlatformApiClient apiClient) :
             ?? settings;
     }
 
+    public async Task<PortfolioAnalyticsAccountProviderSettingsContract> GetAccountProviderSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        return await _apiClient.GetAsync<PortfolioAnalyticsAccountProviderSettingsContract>(
+            $"{BasePath}/settings/account/providers",
+            cancellationToken: cancellationToken)
+            ?? new PortfolioAnalyticsAccountProviderSettingsContract();
+    }
+
+    public async Task<PortfolioAnalyticsAccountProviderSettingsContract> SaveAccountProviderSettingsAsync(
+        PortfolioAnalyticsAccountProviderSettingsContract settings,
+        CancellationToken cancellationToken = default)
+    {
+        return await _apiClient.PostAsync<PortfolioAnalyticsAccountProviderSettingsContract, PortfolioAnalyticsAccountProviderSettingsContract>(
+            $"{BasePath}/settings/account/providers",
+            settings,
+            cancellationToken: cancellationToken)
+            ?? settings;
+    }
+
+    public async Task<PortfolioAnalyticsProviderRequestUsageContract> GetAccountProviderRequestUsageAsync(
+        string? providerKey = null,
+        DateTime? usageDateUtc = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new Dictionary<string, string?>
+        {
+            ["providerKey"] = string.IsNullOrWhiteSpace(providerKey) ? "alpha-vantage" : providerKey.Trim(),
+            ["usageDateUtc"] = usageDateUtc?.ToUniversalTime().ToString("O")
+        };
+
+        return await _apiClient.GetAsync<PortfolioAnalyticsProviderRequestUsageContract>(
+            $"{BasePath}/settings/account/providers/usage",
+            query,
+            cancellationToken: cancellationToken)
+            ?? new PortfolioAnalyticsProviderRequestUsageContract
+            {
+                ProviderKey = query["providerKey"] ?? "alpha-vantage"
+            };
+    }
+
     public async Task<PortfolioAnalyticsSystemSettingsContract> GetSystemSettingsAsync(CancellationToken cancellationToken = default)
     {
         return await _apiClient.GetAsync<PortfolioAnalyticsSystemSettingsContract>(

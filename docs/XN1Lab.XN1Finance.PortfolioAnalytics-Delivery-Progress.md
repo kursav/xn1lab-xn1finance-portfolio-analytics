@@ -17,6 +17,9 @@ Implemented baseline:
 - CoreServices `PortfolioAnalytics` bounded context
 - portfolio, holding, instrument, macro series, and macro release CRUD API
 - account and system settings API
+- account-scoped provider settings API
+- account-scoped provider request usage ledger
+- account-scoped provider usage summary API and Settings visibility
 - shared settings contracts
 - permission constants, permission seed definitions, and controller permission attributes
 - schema seed service for Portfolio Analytics tables
@@ -27,6 +30,7 @@ Implemented baseline:
 - market refresh job path that writes Alpha Vantage quotes and daily bars into Portfolio Analytics storage when explicitly enabled
 - earnings calendar persistence, provider refresh, API, and portfolio child tab first slice
 - settings page wired through product-local service and `IPlatformApiClient`
+- settings page segmented into Profile, Providers, and System tabs
 - portfolio holding editor UI with instrument lookup and sector mapping fill
 - exposure API with asset class, sector, currency, and single-name buckets valued from latest market price when available
 - investor profile target comparison response
@@ -76,15 +80,19 @@ Result: succeeded, 0 warnings, 0 errors
 | PA-021 | P1 | Done | Portfolio earnings UI child tab | Added selected-portfolio earnings child tab in the Portfolio flyout with colored date/severity signal, EPS estimate, and exposure context. |
 | PA-022 | P2 | Todo | Portfolio list earnings summary badges | Add next-event summary per portfolio after the child tab/API path is stable. |
 | PA-023 | P1 | Done | Earnings actual report persistence model | Added `SecurityEarningsReport` as the post-release actual-result entity/table under the existing PortfolioAnalytics database. Portfolio earnings responses now merge schedule data with actual EPS/revenue surprise fields when a report exists. |
+| PA-024 | P1 | Done | Account-scoped provider access settings | Added account-level provider settings contract/API/table/UI tab for FRED and Alpha Vantage keys plus request policy values. External instrument search now resolves Alpha Vantage credentials from the active account settings. |
+| PA-025 | P1 | Done | Account provider request ledger and daily limit enforcement | Added `xn1finance_portfolio_analytics_provider_request_usage`, backend usage increment/read methods, and daily limit enforcement before account-scoped Alpha Vantage external search/resolve calls. Interactive external requests now require an account market data API key. |
+| PA-026 | P1 | Done | Provider request usage visibility | Added account provider usage summary contract/API and Settings > Providers usage cards for used, remaining, and daily limit values. |
 
 ## 3. Recommended Execution Order
 
 1. Implement `PA-005` permission-aware UI states.
-2. Add a provider/job slice that imports actual earnings reports into `SecurityEarningsReport`.
-3. Add portfolio list earnings summary badges from `PA-022`.
-4. Add FX conversion and country/region exposure support.
-5. Implement `PA-006` platform-compliant feedback.
-6. Add focused tests for API scope, permissions, refresh job, exposure math, warnings, scenario calculations, and earnings refresh.
+2. Add provider-aware cache policy for latest price refresh before showing holdings P/L.
+3. Add a provider/job slice that imports actual earnings reports into `SecurityEarningsReport`.
+4. Add portfolio list earnings summary badges from `PA-022`.
+5. Add FX conversion and country/region exposure support.
+6. Implement `PA-006` platform-compliant feedback.
+7. Add focused tests for API scope, permissions, refresh job, exposure math, warnings, scenario calculations, and earnings refresh.
 
 ## 4. DB Smoke Test Checklist
 
@@ -102,6 +110,8 @@ Verify:
 
 - `PortfolioAnalyticsDb` points to the intended database
 - `xn1finance_portfolio_analytics_account_settings` exists
+- `xn1finance_portfolio_analytics_account_provider_settings` exists
+- `xn1finance_portfolio_analytics_provider_request_usage` exists
 - `xn1finance_portfolio_analytics_system_settings` exists
 - `xn1finance_portfolios` exists
 - `xn1finance_portfolio_holdings` exists

@@ -1929,6 +1929,24 @@ Account settings:
 - stores target allocation percentages
 - stores rebalance and macro surprise thresholds
 
+Account provider settings:
+
+- stored in `xn1finance_portfolio_analytics_account_provider_settings`
+- scoped by `owner_account_id`
+- stores the selected macro and market provider keys for that account
+- stores encrypted provider API keys for account-owned provider usage
+- stores account-level request policy values such as minimum refresh interval, max symbols per refresh, and daily request limit
+- never returns raw provider API keys from CoreServices responses
+
+Account provider request usage:
+
+- stored in `xn1finance_portfolio_analytics_provider_request_usage`
+- keyed by `owner_account_id`, `provider_key`, and UTC usage date
+- increments before an external provider request is made for account-scoped market data access
+- blocks account-scoped external provider requests when the account daily request limit is reached
+- exposes a read summary with `RequestCount`, `DailyRequestLimit`, and `RemainingRequests` for Settings UI visibility
+- requires an account market data API key before interactive external symbol resolution/search is allowed
+
 System settings:
 
 - stored in `xn1finance_portfolio_analytics_system_settings`
@@ -1937,6 +1955,12 @@ System settings:
 - stores macro series/release refresh switches
 - stores macro and market provider keys
 - stores refresh interval and release lookback/lookahead windows
+
+The Blazor settings page uses the standard module page tab pattern:
+
+- `Profile` tab for account allocation and investor profile settings
+- `Providers` tab for account-scoped provider access, request usage, and request policy
+- `System` tab for model/system refresh settings that require model permissions
 
 The Blazor settings page uses `IPortfolioAnalyticsService`, which wraps `IPlatformApiClient`.
 Pages must continue to avoid direct raw HTTP calls.
