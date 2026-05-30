@@ -219,10 +219,11 @@
                                                     <label>Market provider</label>
                                                     <InputSelect @bind-Value="ProviderSettings.MarketDataProviderKey">
                                                         <option value="alpha-vantage">alpha-vantage</option>
+                                                        <option value="finnhub">finnhub</option>
                                                     </InputSelect>
                                                 </div>
                                                 <div class="field">
-                                                    <label>Alpha Vantage API key</label>
+                                                    <label>@BuildMarketProviderApiKeyLabel()</label>
                                                     <InputText type="password"
                                                                autocomplete="off"
                                                                placeholder="@BuildSecretPlaceholder(ProviderSettings.HasMarketDataApiKey)"
@@ -234,7 +235,7 @@
                                             {
                                                 <label class="pa-settings-toggle pa-settings-inline-toggle">
                                                     <InputCheckbox @bind-Value="ProviderSettings.ClearMarketDataApiKey" />
-                                                    <span>Clear Alpha Vantage key</span>
+                                                    <span>Clear @BuildMarketProviderName() key</span>
                                                 </label>
                                             }
 
@@ -344,7 +345,11 @@
                                                 </div>
                                                 <div class="field">
                                                     <label>Market provider</label>
-                                                    <InputText @bind-Value="SystemSettings.MarketDataProviderKey" />
+                                                    <InputSelect @bind-Value="SystemSettings.MarketDataProviderKey">
+                                                        <option value="none">none</option>
+                                                        <option value="alpha-vantage">alpha-vantage</option>
+                                                        <option value="finnhub">finnhub</option>
+                                                    </InputSelect>
                                                 </div>
                                             </div>
 
@@ -649,6 +654,21 @@
         return ProviderSettings?.HasMarketDataApiKey == true
             ? "Market key configured"
             : "Market key missing";
+    }
+
+    private string BuildMarketProviderApiKeyLabel()
+    {
+        return $"{BuildMarketProviderName()} API key";
+    }
+
+    private string BuildMarketProviderName()
+    {
+        return ProviderSettings?.MarketDataProviderKey?.Trim().ToLowerInvariant() switch
+        {
+            "finnhub" => "Finnhub",
+            "alpha-vantage" => "Alpha Vantage",
+            _ => "Market provider"
+        };
     }
 
     private string BuildRefreshStatusClass()
