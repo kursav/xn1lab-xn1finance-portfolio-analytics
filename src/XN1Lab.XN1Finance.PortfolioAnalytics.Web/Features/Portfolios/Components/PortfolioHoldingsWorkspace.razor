@@ -65,7 +65,7 @@
     }
     else if (!string.IsNullOrWhiteSpace(PriceSyncMessage))
     {
-        <div class="ui positive message">@PriceSyncMessage</div>
+        <div class="@BuildPriceSyncMessageClass()">@PriceSyncMessage</div>
     }
 
     <WorkspacePageListTable Compact="true" Selectable="true">
@@ -452,6 +452,7 @@
     private string? InstrumentMappingSourceSymbol { get; set; }
     private string? HoldingErrorMessage { get; set; }
     private string? PriceSyncMessage { get; set; }
+    private bool PriceSyncHasFailures { get; set; }
     private string? ProviderSummaryError { get; set; }
     private string? LookupMessage { get; set; }
     private bool IsHoldingLoading { get; set; }
@@ -561,10 +562,12 @@
         SyncingHoldingId = holding.Id;
         HoldingErrorMessage = null;
         PriceSyncMessage = null;
+        PriceSyncHasFailures = false;
 
         try
         {
             var result = await PortfolioAnalyticsService.RefreshHoldingMarketPriceAsync(CurrentPortfolioId, holding.Id);
+            PriceSyncHasFailures = result.FailedSymbols > 0;
             PriceSyncMessage = string.IsNullOrWhiteSpace(result.Message)
                 ? $"{result.RefreshedSymbols} price{(result.RefreshedSymbols == 1 ? string.Empty : "s")} synchronized."
                 : result.Message;
@@ -1209,6 +1212,11 @@
         return string.IsNullOrWhiteSpace(providerKey)
             ? "alpha-vantage"
             : providerKey.Trim().ToLowerInvariant();
+    }
+
+    private string BuildPriceSyncMessageClass()
+    {
+        return PriceSyncHasFailures ? "ui warning message" : "ui positive message";
     }
 
     private static string BuildLatestPriceCellClass(PortfolioHoldingContract holding)
