@@ -257,7 +257,7 @@
     private static string FormatValue(decimal? value, string? unit)
     {
         return value.HasValue
-            ? $"{value.Value:N4}{(string.IsNullOrWhiteSpace(unit) ? string.Empty : $" {unit}")}"
+            ? $"{value.Value:N2}{(string.IsNullOrWhiteSpace(unit) ? string.Empty : $" {unit}")}"
             : "-";
     }
 

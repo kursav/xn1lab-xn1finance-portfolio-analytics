@@ -44,6 +44,10 @@ public interface IPortfolioAnalyticsService
     Task<PortfolioMarketPriceRefreshResultContract> RefreshPortfolioMarketPricesAsync(
         Guid portfolioId,
         CancellationToken cancellationToken = default);
+    Task<PortfolioMarketPriceRefreshResultContract> RefreshHoldingMarketPriceAsync(
+        Guid portfolioId,
+        Guid holdingId,
+        CancellationToken cancellationToken = default);
     Task<PortfolioExposureSnapshotContract?> GetPortfolioExposureAsync(
         Guid portfolioId,
         CancellationToken cancellationToken = default);

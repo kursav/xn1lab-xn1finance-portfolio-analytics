@@ -191,7 +191,7 @@
                                     <div class="meta">@holding.SectorKey</div>
                                 }
                             </td>
-                            <td class="right aligned">@holding.Quantity.ToString("N4")</td>
+                            <td class="right aligned">@FormatDecimal(holding.Quantity)</td>
                             <td class="right aligned">@FormatMoney(holding.AverageCost, holding.Currency)</td>
                             <td>@holding.Status</td>
                             <td class="right aligned">
@@ -788,8 +788,8 @@
             SectorName = holding.SectorName,
             IndustryName = holding.IndustryName,
             Currency = holding.Currency,
-            Quantity = holding.Quantity,
-            AverageCost = holding.AverageCost,
+            Quantity = RoundDisplayDecimal(holding.Quantity),
+            AverageCost = RoundDisplayDecimal(holding.AverageCost),
             AcquiredAtUtc = holding.AcquiredAtUtc,
             Status = holding.Status,
             Notes = holding.Notes,
@@ -817,6 +817,8 @@
         EditModel.ExchangeCode = NormalizeNullableCode(EditModel.ExchangeCode);
         EditModel.Currency = NormalizeCode(EditModel.Currency, Portfolio?.BaseCurrency ?? "USD");
         EditModel.SectorKey = NormalizeNullableKey(EditModel.SectorKey);
+        EditModel.Quantity = RoundDisplayDecimal(EditModel.Quantity);
+        EditModel.AverageCost = RoundDisplayDecimal(EditModel.AverageCost);
     }
 
     private async Task TryApplySingleInstrumentSearchAsync()
@@ -1105,10 +1107,25 @@
         return string.IsNullOrWhiteSpace(value) ? "-" : value;
     }
 
+    private static decimal RoundDisplayDecimal(decimal value)
+    {
+        return Math.Round(value, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static decimal? RoundDisplayDecimal(decimal? value)
+    {
+        return value.HasValue ? RoundDisplayDecimal(value.Value) : null;
+    }
+
+    private static string FormatDecimal(decimal value)
+    {
+        return value.ToString("N2");
+    }
+
     private static string FormatMoney(decimal? value, string currency)
     {
         return value.HasValue
-            ? $"{value.Value:N4} {currency}"
+            ? $"{value.Value:N2} {currency}"
             : "-";
     }
 

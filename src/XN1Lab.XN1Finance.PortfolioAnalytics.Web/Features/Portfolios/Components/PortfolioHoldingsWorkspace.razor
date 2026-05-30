@@ -36,13 +36,6 @@
                 <i class="plus icon"></i>
             </button>
             <button type="button"
-                    class="@($"ui icon button {BuildBusyClass(IsPriceSyncing, !Permissions.CanWriteMarketData || IsHoldingLoading)}")"
-                    title="Sync latest prices"
-                    disabled="@(!Permissions.CanWriteMarketData || IsHoldingLoading || IsPriceSyncing)"
-                    @onclick="SyncLatestPricesAsync">
-                <i class="sync alternate icon"></i>
-            </button>
-            <button type="button"
                     class="@($"ui icon button {(IsHoldingLoading ? "loading disabled" : string.Empty)}")"
                     title="Refresh"
                     disabled="@IsHoldingLoading"
@@ -125,14 +118,11 @@
                                 <div class="meta">@holding.SectorKey</div>
                             }
                         </td>
-                        <td class="right aligned">@holding.Quantity.ToString("N4")</td>
+                        <td class="right aligned">@FormatDecimal(holding.Quantity)</td>
                         <td class="right aligned">@FormatMoney(holding.AverageCost, holding.Currency)</td>
-                        <td class="right aligned">
+                        <td class="@BuildLatestPriceCellClass(holding)">
                             @FormatMoney(holding.LatestMarketPrice, holding.LatestMarketPriceCurrency ?? holding.Currency)
-                            @if (holding.LatestMarketPriceIsStale)
-                            {
-                                <div class="meta">stale</div>
-                            }
+                            <div class="meta">@FormatLatestPriceSyncTime(holding.LatestMarketPriceReceivedAtUtc)</div>
                         </td>
                         <td class="right aligned">@FormatMoney(holding.MarketValue, holding.LatestMarketPriceCurrency ?? holding.Currency)</td>
                         <td class="right aligned">
@@ -159,6 +149,13 @@
                                     title="Delete"
                                     @onclick="() => DeleteHoldingAsync(holding)">
                                 <i class="trash icon"></i>
+                            </button>
+                            <button type="button"
+                                    disabled="@(!Permissions.CanWriteMarketData || SyncingHoldingId == holding.Id)"
+                                    class="@($"ui tiny icon button {BuildBusyClass(SyncingHoldingId == holding.Id, !Permissions.CanWriteMarketData)}")"
+                                    title="Sync latest price"
+                                    @onclick="() => SyncLatestPriceAsync(holding)">
+                                <i class="sync alternate icon"></i>
                             </button>
                         </td>
                     </tr>
@@ -442,11 +439,11 @@
     private string? LookupMessage { get; set; }
     private bool IsHoldingLoading { get; set; }
     private bool IsHoldingSaving { get; set; }
-    private bool IsPriceSyncing { get; set; }
     private bool IsLookupLoading { get; set; }
     private bool IsHoldingFilterOpen { get; set; }
     private bool IsHoldingEditorOpen { get; set; }
     private Guid? DeletingHoldingId { get; set; }
+    private Guid? SyncingHoldingId { get; set; }
 
     private string HoldingEditorTitle => HoldingEditModel.Id == Guid.Empty ? "Add holding" : "Edit holding";
 
@@ -511,20 +508,20 @@
         }
     }
 
-    private async Task SyncLatestPricesAsync()
+    private async Task SyncLatestPriceAsync(PortfolioHoldingContract holding)
     {
-        if (CurrentPortfolioId == Guid.Empty || !Permissions.CanWriteMarketData)
+        if (CurrentPortfolioId == Guid.Empty || holding.Id == Guid.Empty || !Permissions.CanWriteMarketData)
         {
             return;
         }
 
-        IsPriceSyncing = true;
+        SyncingHoldingId = holding.Id;
         HoldingErrorMessage = null;
         PriceSyncMessage = null;
 
         try
         {
-            var result = await PortfolioAnalyticsService.RefreshPortfolioMarketPricesAsync(CurrentPortfolioId);
+            var result = await PortfolioAnalyticsService.RefreshHoldingMarketPriceAsync(CurrentPortfolioId, holding.Id);
             PriceSyncMessage = string.IsNullOrWhiteSpace(result.Message)
                 ? $"{result.RefreshedSymbols} price{(result.RefreshedSymbols == 1 ? string.Empty : "s")} synchronized."
                 : result.Message;
@@ -536,7 +533,7 @@
         }
         finally
         {
-            IsPriceSyncing = false;
+            SyncingHoldingId = null;
         }
     }
 
@@ -749,8 +746,8 @@
             SectorName = holding.SectorName,
             IndustryName = holding.IndustryName,
             Currency = holding.Currency,
-            Quantity = holding.Quantity,
-            AverageCost = holding.AverageCost,
+            Quantity = RoundDisplayDecimal(holding.Quantity),
+            AverageCost = RoundDisplayDecimal(holding.AverageCost),
             AcquiredAtUtc = holding.AcquiredAtUtc,
             Status = holding.Status,
             Notes = holding.Notes,
@@ -779,6 +776,8 @@
         HoldingEditModel.ExchangeCode = NormalizeNullableCode(HoldingEditModel.ExchangeCode);
         HoldingEditModel.Currency = NormalizeCode(HoldingEditModel.Currency, Portfolio.BaseCurrency);
         HoldingEditModel.SectorKey = NormalizeNullableKey(HoldingEditModel.SectorKey);
+        HoldingEditModel.Quantity = RoundDisplayDecimal(HoldingEditModel.Quantity);
+        HoldingEditModel.AverageCost = RoundDisplayDecimal(HoldingEditModel.AverageCost);
     }
 
     private async Task TryApplySingleInstrumentSearchAsync()
@@ -1062,10 +1061,58 @@
         return string.IsNullOrWhiteSpace(value) ? "-" : value;
     }
 
+    private static decimal RoundDisplayDecimal(decimal value)
+    {
+        return Math.Round(value, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static decimal? RoundDisplayDecimal(decimal? value)
+    {
+        return value.HasValue ? RoundDisplayDecimal(value.Value) : null;
+    }
+
+    private static string FormatDecimal(decimal value)
+    {
+        return value.ToString("N2");
+    }
+
+    private static string BuildLatestPriceCellClass(PortfolioHoldingContract holding)
+    {
+        return IsLatestPriceSyncStale(holding) ? "right aligned warning" : "right aligned";
+    }
+
+    private static bool IsLatestPriceSyncStale(PortfolioHoldingContract holding)
+    {
+        if (!holding.LatestMarketPriceReceivedAtUtc.HasValue)
+        {
+            return true;
+        }
+
+        var receivedAtUtc = ToUtc(holding.LatestMarketPriceReceivedAtUtc.Value);
+        return holding.LatestMarketPriceIsStale || receivedAtUtc < DateTime.UtcNow.AddDays(-1);
+    }
+
+    private static string FormatLatestPriceSyncTime(DateTime? receivedAtUtc)
+    {
+        if (!receivedAtUtc.HasValue)
+        {
+            return "Not synced";
+        }
+
+        return $"Synced {ToUtc(receivedAtUtc.Value).ToLocalTime():g}";
+    }
+
+    private static DateTime ToUtc(DateTime value)
+    {
+        return value.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(value, DateTimeKind.Utc)
+            : value.ToUniversalTime();
+    }
+
     private static string FormatMoney(decimal? value, string currency)
     {
         return value.HasValue
-            ? $"{value.Value:N4} {currency}"
+            ? $"{value.Value:N2} {currency}"
             : "-";
     }
 
