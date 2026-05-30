@@ -217,7 +217,10 @@
                                             <div class="pa-settings-fields pa-settings-fields-two">
                                                 <div class="field">
                                                     <label>Market provider</label>
-                                                    <InputSelect @bind-Value="ProviderSettings.MarketDataProviderKey">
+                                                    <InputSelect TValue="string"
+                                                                 Value="@ProviderSettings.MarketDataProviderKey"
+                                                                 ValueChanged="@((string value) => OnMarketProviderChangedAsync(value))"
+                                                                 ValueExpression="@(() => ProviderSettings.MarketDataProviderKey)">
                                                         <option value="alpha-vantage">alpha-vantage</option>
                                                         <option value="finnhub">finnhub</option>
                                                     </InputSelect>
@@ -590,6 +593,23 @@
         {
             ProviderUsageError = ResolveApiError(ex);
         }
+    }
+
+    private async Task OnMarketProviderChangedAsync(string providerKey)
+    {
+        if (ProviderSettings is null)
+        {
+            return;
+        }
+
+        ProviderSettings.MarketDataProviderKey = providerKey;
+        if (string.Equals(providerKey, "finnhub", StringComparison.OrdinalIgnoreCase) &&
+            ProviderSettings.DailyRequestLimit <= 25)
+        {
+            ProviderSettings.DailyRequestLimit = 1000;
+        }
+
+        await RefreshProviderUsageAsync();
     }
 
     private async Task SaveSystemSettingsAsync()

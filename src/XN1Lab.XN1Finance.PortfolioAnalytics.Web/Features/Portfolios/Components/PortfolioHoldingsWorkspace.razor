@@ -165,9 +165,9 @@
                                 <i class="trash icon"></i>
                             </button>
                             <button type="button"
-                                    disabled="@(!Permissions.CanWriteMarketData || SyncingHoldingId == holding.Id)"
-                                    class="@($"ui tiny icon button {BuildBusyClass(SyncingHoldingId == holding.Id, !Permissions.CanWriteMarketData)}")"
-                                    title="Sync latest price"
+                                    disabled="@(!CanSyncLatestPrices || SyncingHoldingId == holding.Id)"
+                                    class="@($"ui tiny icon button {BuildBusyClass(SyncingHoldingId == holding.Id, !CanSyncLatestPrices)}")"
+                                    title="@BuildSyncLatestPriceTitle()"
                                     @onclick="() => SyncLatestPriceAsync(holding)">
                                 <i class="sync alternate icon"></i>
                             </button>
@@ -477,6 +477,11 @@
 
     private bool IsHoldingFilterActive => ActiveHoldingFilterCount > 0;
 
+    private bool CanSyncLatestPrices =>
+        Permissions.CanWriteMarketData &&
+        ProviderSettings?.HasMarketDataApiKey == true &&
+        (ProviderUsage?.RemainingRequests ?? 1) > 0;
+
     private bool HasInstrumentMapping =>
         !string.IsNullOrWhiteSpace(HoldingEditModel.SectorName) ||
         !string.IsNullOrWhiteSpace(HoldingEditModel.IndustryName) ||
@@ -554,7 +559,7 @@
 
     private async Task SyncLatestPriceAsync(PortfolioHoldingContract holding)
     {
-        if (CurrentPortfolioId == Guid.Empty || holding.Id == Guid.Empty || !Permissions.CanWriteMarketData)
+        if (CurrentPortfolioId == Guid.Empty || holding.Id == Guid.Empty || !CanSyncLatestPrices)
         {
             return;
         }
@@ -1217,6 +1222,26 @@
     private string BuildPriceSyncMessageClass()
     {
         return PriceSyncHasFailures ? "ui warning message" : "ui positive message";
+    }
+
+    private string BuildSyncLatestPriceTitle()
+    {
+        if (!Permissions.CanWriteMarketData)
+        {
+            return "Market data write permission is required";
+        }
+
+        if (ProviderSettings?.HasMarketDataApiKey != true)
+        {
+            return "Configure market provider API key";
+        }
+
+        if (ProviderUsage?.RemainingRequests <= 0)
+        {
+            return "Daily provider request limit reached";
+        }
+
+        return "Sync latest price";
     }
 
     private static string BuildLatestPriceCellClass(PortfolioHoldingContract holding)
