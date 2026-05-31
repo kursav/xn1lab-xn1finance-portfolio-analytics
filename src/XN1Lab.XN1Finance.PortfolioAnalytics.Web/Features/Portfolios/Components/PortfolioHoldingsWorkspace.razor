@@ -1,10 +1,10 @@
+@inherits LocalizedPlatformComponentBase
 @using XN1Lab.Platform.Api.Exceptions
 @using XN1Lab.Platform.CoreServices.Contracts.PortfolioAnalytics
 @using XN1Lab.Platform.Shared.Pagination
 @using XN1Lab.Platform.UI.Dialogs
 @using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.PortfolioAnalytics.Services
 @inject IPortfolioAnalyticsService PortfolioAnalyticsService
-@inject NavigationManager NavigationManager
 
 <div class="xn1-workspace-entity-section">
     <div class="xn1-workspace-entity-section-toolbar">
@@ -45,28 +45,6 @@
             </button>
         </div>
     </div>
-
-    <div class="@BuildProviderBannerClass()">
-        <i class="@BuildProviderBannerIconClass()"></i>
-        <div class="content">
-            <div class="header">@BuildProviderBannerTitle()</div>
-            <p>@BuildProviderBannerText()</p>
-            <button type="button"
-                    class="ui tiny button"
-                    @onclick="OpenProviderSettings">
-                Provider settings
-            </button>
-        </div>
-    </div>
-
-    @if (!string.IsNullOrWhiteSpace(HoldingErrorMessage))
-    {
-        <div class="ui warning message">@HoldingErrorMessage</div>
-    }
-    else if (!string.IsNullOrWhiteSpace(PriceSyncMessage))
-    {
-        <div class="@BuildPriceSyncMessageClass()">@PriceSyncMessage</div>
-    }
 
     <WorkspacePageListTable Compact="true" Selectable="true">
         <thead>
@@ -450,10 +428,7 @@
     private string HoldingStatusFilterValue { get; set; } = NoFilterValue;
     private string? InstrumentSearchText { get; set; }
     private string? InstrumentMappingSourceSymbol { get; set; }
-    private string? HoldingErrorMessage { get; set; }
-    private string? PriceSyncMessage { get; set; }
-    private bool PriceSyncHasFailures { get; set; }
-    private string? ProviderSummaryError { get; set; }
+    private string? LastProviderWarningToastMessage { get; set; }
     private string? LookupMessage { get; set; }
     private bool IsHoldingLoading { get; set; }
     private bool IsHoldingSaving { get; set; }
@@ -503,13 +478,11 @@
 
     private async Task LoadProviderSummaryAsync()
     {
-        ProviderSummaryError = null;
-
         if (!Permissions.CanRead)
         {
             ProviderSettings = null;
             ProviderUsage = null;
-            ProviderSummaryError = "Portfolio read permission is required.";
+            DisplayProviderWarningOnce("Portfolio read permission is required.");
             return;
         }
 
@@ -518,11 +491,12 @@
             ProviderSettings = await PortfolioAnalyticsService.GetAccountProviderSettingsAsync();
             ProviderUsage = await PortfolioAnalyticsService.GetAccountProviderRequestUsageAsync(
                 ProviderSettings.MarketDataProviderKey);
+            DisplayProviderWarningIfNeeded();
         }
         catch (PlatformApiException ex)
         {
             ProviderUsage = null;
-            ProviderSummaryError = ResolveApiError(ex);
+            DisplayProviderWarningOnce(ResolveApiError(ex));
         }
     }
 
@@ -534,7 +508,6 @@
         }
 
         IsHoldingLoading = true;
-        HoldingErrorMessage = null;
 
         try
         {
@@ -549,7 +522,7 @@
         }
         catch (PlatformApiException ex)
         {
-            HoldingErrorMessage = ResolveApiError(ex);
+            DisplayWarning(ResolveApiError(ex), "Holdings", autoTranslate: false);
         }
         finally
         {
@@ -565,23 +538,28 @@
         }
 
         SyncingHoldingId = holding.Id;
-        HoldingErrorMessage = null;
-        PriceSyncMessage = null;
-        PriceSyncHasFailures = false;
 
         try
         {
             var result = await PortfolioAnalyticsService.RefreshHoldingMarketPriceAsync(CurrentPortfolioId, holding.Id);
-            PriceSyncHasFailures = result.FailedSymbols > 0;
-            PriceSyncMessage = string.IsNullOrWhiteSpace(result.Message)
+            var priceSyncMessage = string.IsNullOrWhiteSpace(result.Message)
                 ? $"{result.RefreshedSymbols} price{(result.RefreshedSymbols == 1 ? string.Empty : "s")} synchronized."
                 : result.Message;
+            if (result.FailedSymbols > 0)
+            {
+                DisplayWarning(priceSyncMessage, "Price sync", autoTranslate: false);
+            }
+            else
+            {
+                DisplayInfo(priceSyncMessage, "Price sync", autoTranslate: false);
+            }
+
             await LoadProviderSummaryAsync();
             await LoadHoldingsAsync();
         }
         catch (PlatformApiException ex)
         {
-            HoldingErrorMessage = ResolveApiError(ex);
+            DisplayWarning(ResolveApiError(ex), "Price sync", autoTranslate: false);
             await LoadProviderSummaryAsync();
         }
         finally
@@ -605,12 +583,11 @@
         var validationError = ValidateHoldingEditModel();
         if (!string.IsNullOrWhiteSpace(validationError))
         {
-            HoldingErrorMessage = validationError;
+            DisplayWarning(validationError, "Holding", autoTranslate: false);
             return;
         }
 
         IsHoldingSaving = true;
-        HoldingErrorMessage = null;
         LookupMessage = null;
 
         try
@@ -624,7 +601,7 @@
         }
         catch (PlatformApiException ex)
         {
-            HoldingErrorMessage = ResolveApiError(ex);
+            DisplayWarning(ResolveApiError(ex), "Holding", autoTranslate: false);
         }
         finally
         {
@@ -640,7 +617,6 @@
         }
 
         DeletingHoldingId = holding.Id;
-        HoldingErrorMessage = null;
 
         try
         {
@@ -654,7 +630,7 @@
         }
         catch (PlatformApiException ex)
         {
-            HoldingErrorMessage = ResolveApiError(ex);
+            DisplayWarning(ResolveApiError(ex), "Holding", autoTranslate: false);
         }
         finally
         {
@@ -942,11 +918,6 @@
         await LoadHoldingsAsync();
     }
 
-    private void OpenProviderSettings()
-    {
-        NavigationManager.NavigateTo("/finance/portfolio-management/settings");
-    }
-
     private async Task ClearHoldingFiltersAsync()
     {
         HoldingSymbolFilter = null;
@@ -1134,71 +1105,45 @@
         return value.ToString("N2");
     }
 
-    private string BuildProviderBannerClass()
+    private void DisplayProviderWarningIfNeeded()
     {
-        if (!string.IsNullOrWhiteSpace(ProviderSummaryError))
-        {
-            return "ui warning icon message";
-        }
-
         if (ProviderSettings is null)
         {
-            return "ui info icon message";
+            DisplayProviderWarningOnce("Provider settings could not be loaded yet.");
+            return;
         }
 
-        if (!ProviderSettings.HasMarketDataApiKey || ProviderUsage?.RemainingRequests <= 0)
+        var providerName = BuildProviderName(ProviderSettings.MarketDataProviderKey);
+        if (!ProviderSettings.HasMarketDataApiKey)
         {
-            return "ui warning icon message";
+            DisplayProviderWarningOnce($"Market provider: {providerName}. API key missing. Row price sync is disabled until Provider settings are updated.");
+            return;
         }
 
-        return NormalizeProviderKey(ProviderSettings.MarketDataProviderKey) == "finnhub"
-            ? "ui positive icon message"
-            : "ui info icon message";
+        if (ProviderUsage?.RemainingRequests <= 0)
+        {
+            DisplayProviderWarningOnce($"Market provider: {providerName}. Daily request limit reached.");
+            return;
+        }
+
+        if (NormalizeProviderKey(ProviderSettings.MarketDataProviderKey) == "alpha-vantage")
+        {
+            DisplayProviderWarningOnce($"Market provider: {providerName}. Alpha Vantage is active; switch this account to Finnhub in Provider settings for the higher request policy.");
+            return;
+        }
+
+        LastProviderWarningToastMessage = null;
     }
 
-    private string BuildProviderBannerIconClass()
+    private void DisplayProviderWarningOnce(string message)
     {
-        if (!string.IsNullOrWhiteSpace(ProviderSummaryError) ||
-            ProviderSettings?.HasMarketDataApiKey != true ||
-            ProviderUsage?.RemainingRequests <= 0)
+        if (string.Equals(LastProviderWarningToastMessage, message, StringComparison.Ordinal))
         {
-            return "exclamation triangle icon";
+            return;
         }
 
-        return "key icon";
-    }
-
-    private string BuildProviderBannerTitle()
-    {
-        return $"Market provider: {BuildProviderName(ProviderSettings?.MarketDataProviderKey)}";
-    }
-
-    private string BuildProviderBannerText()
-    {
-        if (!string.IsNullOrWhiteSpace(ProviderSummaryError))
-        {
-            return ProviderSummaryError;
-        }
-
-        if (ProviderSettings is null)
-        {
-            return "Provider settings could not be loaded yet.";
-        }
-
-        var keyStatus = ProviderSettings.HasMarketDataApiKey
-            ? "API key configured"
-            : "API key missing";
-        var usageText = ProviderUsage is null
-            ? "Usage not loaded."
-            : $"{ProviderUsage.RequestCount}/{ProviderUsage.DailyRequestLimit} used today, {ProviderUsage.RemainingRequests} remaining.";
-        var providerKey = NormalizeProviderKey(ProviderSettings.MarketDataProviderKey);
-
-        if (providerKey == "alpha-vantage")
-        {
-            return $"{keyStatus}. {usageText} Alpha Vantage is active; switch this account to Finnhub in Provider settings for the higher request policy.";
-        }
-
-        return $"{keyStatus}. {usageText} Row price sync uses this provider.";
+        LastProviderWarningToastMessage = message;
+        DisplayWarning(message, "Market data", autoTranslate: false);
     }
 
     private static string BuildProviderName(string? providerKey)
@@ -1217,11 +1162,6 @@
         return string.IsNullOrWhiteSpace(providerKey)
             ? "alpha-vantage"
             : providerKey.Trim().ToLowerInvariant();
-    }
-
-    private string BuildPriceSyncMessageClass()
-    {
-        return PriceSyncHasFailures ? "ui warning message" : "ui positive message";
     }
 
     private string BuildSyncLatestPriceTitle()
