@@ -24,6 +24,9 @@
     [SupplyParameterFromQuery(Name = "code")]
     public string? Code { get; set; }
 
+    [SupplyParameterFromQuery(Name = "state")]
+    public string? State { get; set; }
+
     private string? Error { get; set; }
 
     protected override async Task OnParametersSetAsync()
@@ -45,7 +48,7 @@
 
         try
         {
-            var session = await authenticationService.CompleteSignInAsync(Code);
+            var session = await authenticationService.CompleteSignInAsync(Code, State);
             if (session is null)
             {
                 Error = "Keycloak session could not be resolved.";
