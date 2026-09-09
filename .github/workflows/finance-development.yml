@@ -25,6 +25,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      image_digest: ${{ steps.build.outputs.digest }}
+      platform_revision: ${{ steps.platform.outputs.revision }}
     env:
       SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
@@ -192,3 +195,105 @@ jobs:
           path: products/xn1finance/portfolio-analytics/artifacts/development-evidence
           if-no-files-found: error
           retention-days: 14
+
+  deploy-development-image:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    needs: build-test-publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: development
+    concurrency:
+      group: finance-development-rollout
+      cancel-in-progress: false
+    permissions:
+      contents: read
+
+    steps:
+      - name: Reject stale develop workflow before rollout
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          current_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/develop" --jq '.object.sha')"
+          [[ "$current_sha" == "$GITHUB_SHA" ]] || { echo "A newer develop revision exists." >&2; exit 1; }
+
+      - name: Validate rollout inputs
+        env:
+          IMAGE_DIGEST: ${{ needs.build-test-publish.outputs.image_digest }}
+          PLATFORM_REVISION: ${{ needs.build-test-publish.outputs.platform_revision }}
+          ROLLOUT_HOST: ${{ vars.XN1LAB_DEVELOPMENT_ROLLOUT_HOST }}
+          ROLLOUT_USER: ${{ vars.XN1LAB_DEVELOPMENT_ROLLOUT_USER }}
+          ROLLOUT_KEY: ${{ secrets.XN1LAB_DEVELOPMENT_ROLLOUT_SSH_KEY }}
+          ROLLOUT_KNOWN_HOSTS: ${{ secrets.XN1LAB_DEVELOPMENT_ROLLOUT_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$GITHUB_REPOSITORY" == "kursav/xn1lab-xn1finance-portfolio-analytics" ]]
+          [[ "$GITHUB_REF" == "refs/heads/develop" ]]
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PLATFORM_REVISION" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ -n "$ROLLOUT_HOST" && -n "$ROLLOUT_USER" && -n "$ROLLOUT_KEY" && -n "$ROLLOUT_KNOWN_HOSTS" ]]
+
+      - name: Install ephemeral SSH material
+        env:
+          ROLLOUT_KEY: ${{ secrets.XN1LAB_DEVELOPMENT_ROLLOUT_SSH_KEY }}
+          ROLLOUT_KNOWN_HOSTS: ${{ secrets.XN1LAB_DEVELOPMENT_ROLLOUT_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          install -d "$RUNNER_TEMP/xn1lab-rollout-ssh"
+          printf '%s\n' "$ROLLOUT_KEY" > "$RUNNER_TEMP/xn1lab-rollout-ssh/id_ed25519"
+          printf '%s\n' "$ROLLOUT_KNOWN_HOSTS" > "$RUNNER_TEMP/xn1lab-rollout-ssh/known_hosts"
+          ssh-keygen -y -f "$RUNNER_TEMP/xn1lab-rollout-ssh/id_ed25519" >/dev/null
+
+      - name: Deploy exact image and prove rollback
+        env:
+          IMAGE_DIGEST: ${{ needs.build-test-publish.outputs.image_digest }}
+          PLATFORM_REVISION: ${{ needs.build-test-publish.outputs.platform_revision }}
+          ROLLOUT_HOST: ${{ vars.XN1LAB_DEVELOPMENT_ROLLOUT_HOST }}
+          ROLLOUT_USER: ${{ vars.XN1LAB_DEVELOPMENT_ROLLOUT_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          evidence_dir="products/xn1finance/portfolio-analytics/artifacts/development-rollout"
+          mkdir -p "$evidence_dir"
+          payload="$(jq -cn \
+            --arg profile finance \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg githubRef "$GITHUB_REF" \
+            --arg source "$GITHUB_SHA" \
+            --arg platform "$PLATFORM_REVISION" \
+            --arg image "${IMAGE_NAME}@${IMAGE_DIGEST}" \
+            --argjson workflowRun "$GITHUB_RUN_ID" \
+            --argjson workflowAttempt "$GITHUB_RUN_ATTEMPT" \
+            '{schemaVersion:1,environment:"development",productionAuthorized:false,profile:$profile,repository:$repository,githubRef:$githubRef,source:$source,dependencies:{platform:$platform},image:$image,workflowRun:$workflowRun,workflowAttempt:$workflowAttempt}')"
+          printf '%s' "$payload" | ssh -T \
+            -i "$RUNNER_TEMP/xn1lab-rollout-ssh/id_ed25519" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/xn1lab-rollout-ssh/known_hosts" \
+            -o ConnectTimeout=15 "$ROLLOUT_USER@$ROLLOUT_HOST" \
+            | tee "$evidence_dir/finance-development-rollout.json"
+          jq -e --arg source "$GITHUB_SHA" --arg image "${IMAGE_NAME}@${IMAGE_DIGEST}" \
+            '.status == "PASS" and .environment == "development" and .productionAuthorized == false and .productionChanged == false and .profile == "finance" and .source == $source and .image == $image and .restartPassed == true' \
+            "$evidence_dir/finance-development-rollout.json" >/dev/null
+
+      - name: Upload development rollout evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: finance-development-rollout-evidence
+          path: products/xn1finance/portfolio-analytics/artifacts/development-rollout
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Remove ephemeral SSH material
+        if: always()
+        shell: bash
+        run: |
+          if [[ -d "$RUNNER_TEMP/xn1lab-rollout-ssh" ]]; then
+            find "$RUNNER_TEMP/xn1lab-rollout-ssh" -type f -exec shred -u -- {} +
+            rmdir "$RUNNER_TEMP/xn1lab-rollout-ssh"
+          fi
