@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$BaseRef = 'origin/develop', [string]$ExpectedHead = '', [switch]$ForPush, [switch]$PrePush, [switch]$Library)
+param([string]$BaseRef = '', [string]$ExpectedHead = '', [switch]$ForPush, [switch]$PrePush, [switch]$Library)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
@@ -31,6 +31,18 @@ function Assert-WorkflowPolicy([string]$Text) {
     if ($branches.Count -eq 0 -or @($branches | Select-Object -Unique).Count -ne $branches.Count) { throw 'Missing/duplicate integration branches.' }
 }
 
+function Get-BranchBase([string]$Branch) {
+    if ($Branch -ceq 'main') { return 'origin/main' }
+    if ($Branch -ceq 'develop') { return 'origin/develop' }
+    if ($Branch -cnotmatch '^(feat|fix|docs|chore|refactor|test|ci|build|perf|style|revert|release|hotfix)/[A-Z][A-Z0-9]*-[1-9][0-9]*/[a-z0-9][a-z0-9._/-]*$' -or $Branch -match '(^|/)\.\.(/|$)|//|/$') { throw 'Unsupported/detached task branch.' }
+    if ($Branch.StartsWith('hotfix/') -or $Branch.StartsWith('release/')) { return 'origin/main' }
+    return 'origin/develop'
+}
+function Resolve-BranchBase([string]$Branch, [string]$Requested) {
+    $expected = Get-BranchBase $Branch
+    if ($Requested -and $Requested -cne $expected) { throw 'Branch base mismatch; hotfix/release must use origin/main.' }
+    return $expected
+}
 function Get-ValidationScope([string[]]$Paths) {
     if (!$Paths.Count) { return 'no-change' }
     $needsBuild = $false
@@ -48,7 +60,7 @@ function Get-PushTarget([string]$InputText, [string]$Head, [string]$Branch) {
     if ($rows[0].Trim() -cnotmatch '^(refs/heads/[A-Za-z0-9][A-Za-z0-9/._-]*) ([0-9a-f]{40}) (refs/heads/[A-Za-z0-9][A-Za-z0-9/._-]*) ([0-9a-f]{40})$') { throw 'Unsupported push ref record.' }
     $localRef = $Matches[1]; $localSha = $Matches[2]; $remoteRef = $Matches[3]; $remoteSha = $Matches[4]
     if ($localSha -cne $Head -or $localSha -eq ('0' * 40) -or $localRef -cne "refs/heads/$Branch" -or $remoteRef -cne $localRef) { throw 'Non-HEAD, deletion, tag or cross-branch push refused.' }
-    return @{ ExpectedHead = $Head; BaseRef = $(if ($remoteSha -eq ('0' * 40)) { 'origin/develop' } else { $remoteSha }) }
+    return @{ ExpectedHead = $Head; BaseRef = (Get-BranchBase $Branch) }
 }
 
 function Invoke-Checked([string]$Executable, [string[]]$Arguments) {
@@ -87,7 +99,7 @@ try {
         $target = Get-PushTarget ([Console]::In.ReadToEnd()) $head ([string](Read-Git @('branch', '--show-current')))
         $BaseRef = $target.BaseRef; $ExpectedHead = $target.ExpectedHead; $ForPush = $true
     }
-    if ($BaseRef -cnotmatch '^(origin/(develop|main)|[0-9a-f]{40})$') { throw 'Base must be a fetched integration ref or exact remote SHA.' }
+    $BaseRef = Resolve-BranchBase ([string](Read-Git @('branch', '--show-current'))) $BaseRef
     $base = [string](Read-Git @('rev-parse', '--verify', "$BaseRef^{commit}"))
     Invoke-Checked git @('merge-base', '--is-ancestor', $base, $head)
     if ($ForPush) {
