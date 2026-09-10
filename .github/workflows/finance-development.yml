@@ -3,8 +3,6 @@ name: XN1Finance Portfolio Analytics Development Image
 on:
   push:
     branches: [develop]
-  pull_request:
-    branches: [develop]
 
 permissions:
   contents: read
