@@ -27,4 +27,16 @@ if ((Get-PushTarget $row $head $branch).BaseRef -cne 'origin/develop') { throw '
 foreach ($bad in @("$row`n$row", $row.Replace($head, ('2' * 40)), $row.Replace("refs/heads/$branch", 'refs/tags/v1'), $row.Replace(" $head ", " $zero "), $row.Replace("refs/heads/$branch $zero", "refs/heads/main $zero"))) {
     Reject { Get-PushTarget $bad $head $branch }
 }
+foreach ($taskBranch in @('hotfix/ECODEV-94/local-first-main', 'release/ECODEV-94/production-policy')) {
+    if ((Get-BranchBase $taskBranch) -cne 'origin/main') { throw 'Hotfix/release base regression.' }
+    $taskRow = "refs/heads/$taskBranch $head refs/heads/$taskBranch $zero"
+    if ((Get-PushTarget $taskRow $head $taskBranch).BaseRef -cne 'origin/main') { throw 'Pre-push main base mismatch.' }
+    if ((Get-PushTarget ($taskRow.Replace($zero, ('2' * 40))) $head $taskBranch).BaseRef -cne 'origin/main') { throw 'Existing topic update must retain integration base.' }
+    Reject { Resolve-BranchBase $taskBranch 'origin/develop' }
+}
+if ((Resolve-BranchBase 'main' '') -cne 'origin/main') { throw 'Main default mismatch.' }
+if ((Resolve-BranchBase 'develop' '') -cne 'origin/develop') { throw 'Develop default mismatch.' }
+foreach ($bad in @('', 'hotfix/ECODEV-94/../x', 'hotfixfoo/ECODEV-94/x', 'codex/x')) { Reject { Get-BranchBase $bad } }
+if ((Resolve-BranchBase 'fix/ECODEV-94/hotfix-base-validation' '') -cne 'origin/develop') { throw 'Fix branch base mismatch.' }
+Reject { Resolve-BranchBase 'fix/ECODEV-94/hotfix-base-validation' 'origin/main' }
 Write-Output 'ECODEV-94 local policy self-tests passed; no stack build was run by these tests.'
