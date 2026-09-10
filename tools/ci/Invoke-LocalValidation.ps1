@@ -48,7 +48,7 @@ function Get-ValidationScope([string[]]$Paths) {
     $needsBuild = $false
     foreach ($path in $Paths) {
         if ($path -match '[\x00-\x1f"\\]' -or $path.StartsWith('/') -or $path -match '(^|/)\.\.(/|$)') { throw 'Unsafe changed path.' }
-        if ($path -notmatch '(^docs/.*\.md$|^[^/]+\.md$|^\.github/(workflows/[^/]+\.ya?ml|CODEOWNERS)$|^tools/ci/((Invoke-LocalValidation|Test-LocalValidation)\.ps1|README\.md)$|^\.githooks/pre-push$|^\.gitattributes$)') { $needsBuild = $true }
+        if ($path -notmatch '(^docs/.*\.md$|^[^/]+\.md$|^\.github/(workflows/[^/]+\.ya?ml|CODEOWNERS)$|^tools/ci/((Invoke-LocalValidation|Test-LocalValidation|Verify-FinanceSameDigestPromotion|Test-FinanceSameDigestPromotion)\.ps1|README\.md)$|^\.githooks/pre-push$|^\.gitattributes$)') { $needsBuild = $true }
     }
     if ($needsBuild) { return 'dotnet' }
     return 'policy-only'
