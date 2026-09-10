@@ -2,6 +2,8 @@
 param(
     [string]$ReceiptPath = '',
     [string]$ExpectedSourceSha = '',
+    [string]$ExpectedTargetSha = '',
+    [string]$ExpectedTargetTreeSha = '',
     [string]$ExpectedRepository = '',
     [string]$ExpectedWorkflowPath = '',
     [string]$ExpectedRunId = '',
@@ -32,6 +34,8 @@ function Test-FinanceSameDigestPromotion {
     param(
         [Parameter(Mandatory)][hashtable]$Receipt,
         [Parameter(Mandatory)][string]$SourceSha,
+        [Parameter(Mandatory)][string]$TargetSha,
+        [Parameter(Mandatory)][string]$TargetTreeSha,
         [Parameter(Mandatory)][string]$Repository,
         [Parameter(Mandatory)][string]$WorkflowPath,
         [Parameter(Mandatory)][string]$RunId,
@@ -39,6 +43,8 @@ function Test-FinanceSameDigestPromotion {
     )
 
     Assert-Sha $SourceSha 'ExpectedSourceSha'
+    Assert-Sha $TargetSha 'ExpectedTargetSha'
+    Assert-Sha $TargetTreeSha 'ExpectedTargetTreeSha'
     if ($Repository -cnotmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { Stop-Promotion 'ExpectedRepository is malformed.' }
     if ($WorkflowPath -cnotmatch '^\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml$') { Stop-Promotion 'ExpectedWorkflowPath is malformed.' }
     if ($RunId -cnotmatch '^[1-9][0-9]*$') { Stop-Promotion 'ExpectedRunId is malformed.' }
@@ -51,7 +57,7 @@ function Test-FinanceSameDigestPromotion {
 
     $recordedSource = Require-String (Require-Property $Receipt 'sourceSha') 'sourceSha'
     Assert-Sha $recordedSource 'sourceSha'
-    if ($recordedSource -cne $SourceSha -or (Require-String (Require-Property $Receipt 'source') 'source') -cne $SourceSha) { Stop-Promotion 'source SHA does not match main.' }
+    if ($recordedSource -cne $SourceSha -or (Require-String (Require-Property $Receipt 'source') 'source') -cne $SourceSha) { Stop-Promotion 'source SHA does not match the selected development evidence.' }
 
     $digest = Require-String (Require-Property $Receipt 'digest') 'digest'
     Assert-Digest $digest 'digest'
@@ -85,6 +91,8 @@ function Test-FinanceSameDigestPromotion {
     return [ordered]@{
         status = 'verified-no-rebuild-no-deploy'
         sourceSha = $SourceSha
+        targetSha = $TargetSha
+        targetTreeSha = $TargetTreeSha
         image = $Image
         digest = $digest
         developmentRunId = $RunId
@@ -95,4 +103,4 @@ if ($Library) { return }
 if (-not (Test-Path -LiteralPath $ReceiptPath -PathType Leaf)) { Stop-Promotion 'development receipt is missing.' }
 try { $receipt = ConvertFrom-Json -AsHashtable -Depth 16 ([IO.File]::ReadAllText((Resolve-Path -LiteralPath $ReceiptPath))) }
 catch { Stop-Promotion 'development receipt is not valid JSON.' }
-(Test-FinanceSameDigestPromotion -Receipt $receipt -SourceSha $ExpectedSourceSha -Repository $ExpectedRepository -WorkflowPath $ExpectedWorkflowPath -RunId $ExpectedRunId -Image $ExpectedImage) | ConvertTo-Json -Compress
+(Test-FinanceSameDigestPromotion -Receipt $receipt -SourceSha $ExpectedSourceSha -TargetSha $ExpectedTargetSha -TargetTreeSha $ExpectedTargetTreeSha -Repository $ExpectedRepository -WorkflowPath $ExpectedWorkflowPath -RunId $ExpectedRunId -Image $ExpectedImage) | ConvertTo-Json -Compress
