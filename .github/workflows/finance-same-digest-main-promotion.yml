@@ -1,0 +1,79 @@
+name: XN1Finance Same-Digest Main Promotion
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: finance-main-promotion-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  verify-development-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SOURCE_SHA: ${{ github.sha }}
+      DEVELOPMENT_WORKFLOW: finance-development.yml
+      DEVELOPMENT_EVIDENCE: finance-development-image-evidence
+      IMAGE_NAME: ghcr.io/kursav/xn1lab-xn1finance-portfolio-analytics-dev
+    steps:
+      - name: Checkout exact main source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.SOURCE_SHA }}
+
+      - name: Refuse a non-main or non-head promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+
+      - name: Locate successful development image evidence for this exact source
+        id: development-run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id="$(gh api --paginate \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/${DEVELOPMENT_WORKFLOW}/runs?event=push&status=completed&head_sha=${SOURCE_SHA}&per_page=100" \
+            --jq '[.workflow_runs[] | select(.conclusion == "success" and .head_branch == "develop") | .id] | last // empty')"
+          test -n "$run_id"
+          printf 'run_id=%s\n' "$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Download immutable development evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.DEVELOPMENT_EVIDENCE }}
+          path: artifacts/development-evidence
+          run-id: ${{ steps.development-run.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify exact source, image digest, and provenance without rebuilding
+        shell: pwsh
+        env:
+          DEVELOPMENT_RUN_ID: ${{ steps.development-run.outputs.run_id }}
+        run: |
+          ./tools/ci/Verify-FinanceSameDigestPromotion.ps1 `
+            -ReceiptPath artifacts/development-evidence/finance-development-image.json `
+            -ExpectedSourceSha $env:SOURCE_SHA `
+            -ExpectedRepository $env:GITHUB_REPOSITORY `
+            -ExpectedWorkflowPath .github/workflows/finance-development.yml `
+            -ExpectedRunId $env:DEVELOPMENT_RUN_ID `
+            -ExpectedImage $env:IMAGE_NAME
+
+      - name: Record verified immutable input
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -r '.artifact.reference' artifacts/development-evidence/finance-development-image.json >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' 'No build and no deployment run on main. A separately authorized production gate must consume this exact verified OCI reference.' >> "$GITHUB_STEP_SUMMARY"

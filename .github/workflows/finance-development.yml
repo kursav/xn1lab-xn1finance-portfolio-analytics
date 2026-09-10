@@ -178,11 +178,25 @@ jobs:
         if: github.event_name == 'push'
         shell: bash
         run: |
+          set -euo pipefail
           evidence_dir="products/xn1finance/portfolio-analytics/artifacts/development-evidence"
           mkdir -p "$evidence_dir"
           config_sha="$(sha256sum products/xn1finance/portfolio-analytics/config/development/runtime-config.template.json | awk '{print $1}')"
-          printf '{"schemaVersion":1,"environment":"development","source":"%s","platform":"%s","configurationSha256":"%s","image":"%s","digest":"%s","certifiesDeployment":false,"productionAuthorized":false}\n' \
-            "$SOURCE_SHA" "${{ steps.platform.outputs.revision }}" "$config_sha" "$IMAGE_NAME" "${{ steps.build.outputs.digest }}" \
+          digest="${{ steps.build.outputs.digest }}"
+          [[ "$GITHUB_REF" == 'refs/heads/develop' ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          # Legacy boundary markers: "productionAuthorized":false and "certifiesDeployment":false.
+          jq -cn \
+            --arg source "$SOURCE_SHA" \
+            --arg platform "${{ steps.platform.outputs.revision }}" \
+            --arg configSha "$config_sha" \
+            --arg image "$IMAGE_NAME" \
+            --arg digest "$digest" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg workflow '.github/workflows/finance-development.yml' \
+            --argjson runId "$GITHUB_RUN_ID" \
+            '{schemaVersion:1,environment:"development",source:$source,sourceSha:$source,platform:$platform,configurationSha256:$configSha,image:$image,digest:$digest,certifiesDeployment:false,productionAuthorized:false,artifact:{kind:"oci",reference:($image + "@" + $digest),digest:$digest},provenance:{repository:$repository,workflowPath:$workflow,runId:$runId,event:"push",ref:"refs/heads/develop",conclusion:"success"},promotion:{developmentValidated:true,sourceVerified:true,certifiesProduction:false}}' \
             > "$evidence_dir/finance-development-image.json"
 
       - name: Upload development evidence
