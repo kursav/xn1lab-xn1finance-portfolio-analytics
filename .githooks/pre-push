@@ -1,0 +1,4 @@
+#!/bin/sh
+# Opt-in only. Validate exactly one current-HEAD push; stdin belongs to Git.
+set -eu
+exec pwsh -NoProfile -File tools/ci/Invoke-LocalValidation.ps1 -PrePush
