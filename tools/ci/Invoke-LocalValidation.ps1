@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$BaseRef = 'origin/develop', [string]$ExpectedHead = '', [switch]$ForPush, [switch]$PrePush, [switch]$Library)
+param([string]$BaseRef = '', [string]$ExpectedHead = '', [switch]$ForPush, [switch]$PrePush, [switch]$Library)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
@@ -31,14 +31,26 @@ function Assert-WorkflowPolicy([string]$Text) {
     if ($branches.Count -eq 0 -or @($branches | Select-Object -Unique).Count -ne $branches.Count) { throw 'Missing/duplicate integration branches.' }
 }
 
+function Get-BranchBase([string]$Branch) {
+    if ($Branch -ceq 'main') { return 'origin/main' }
+    if ($Branch -ceq 'develop') { return 'origin/develop' }
+    if ($Branch -cnotmatch '^(feat|fix|docs|chore|refactor|test|ci|build|perf|style|revert|release|hotfix)/[A-Z][A-Z0-9]*-[1-9][0-9]*/[a-z0-9][a-z0-9._/-]*$' -or $Branch -match '(^|/)\.\.(/|$)|//|/$') { throw 'Unsupported/detached task branch.' }
+    if ($Branch.StartsWith('hotfix/') -or $Branch.StartsWith('release/')) { return 'origin/main' }
+    return 'origin/develop'
+}
+function Resolve-BranchBase([string]$Branch, [string]$Requested) {
+    $expected = Get-BranchBase $Branch
+    if ($Requested -and $Requested -cne $expected) { throw 'Branch base mismatch; hotfix/release must use origin/main.' }
+    return $expected
+}
 function Get-ValidationScope([string[]]$Paths) {
     if (!$Paths.Count) { return 'no-change' }
     $needsBuild = $false
     foreach ($path in $Paths) {
         if ($path -match '[\x00-\x1f"\\]' -or $path.StartsWith('/') -or $path -match '(^|/)\.\.(/|$)') { throw 'Unsafe changed path.' }
-        if ($path -notmatch '(^docs/.*\.md$|^[^/]+\.md$|^\.github/(workflows/[^/]+\.ya?ml|CODEOWNERS)$|^tools/ci/((Invoke-LocalValidation|Test-LocalValidation)\.ps1|README\.md)$|^\.githooks/pre-push$|^\.gitattributes$)') { $needsBuild = $true }
+        if ($path -notmatch '(^docs/local-first-delivery\.md$|^\.github/(workflows/[^/]+\.ya?ml|CODEOWNERS)$|^tools/ci/((Invoke-LocalValidation|Test-LocalValidation)\.ps1|README\.md)$|^\.githooks/pre-push$|^\.gitattributes$)') { $needsBuild = $true }
     }
-    if ($needsBuild) { return 'dotnet' }
+    if ($needsBuild) { return 'LOCAL_FIXTURE_REQUIRED' }
     return 'policy-only'
 }
 
@@ -48,7 +60,7 @@ function Get-PushTarget([string]$InputText, [string]$Head, [string]$Branch) {
     if ($rows[0].Trim() -cnotmatch '^(refs/heads/[A-Za-z0-9][A-Za-z0-9/._-]*) ([0-9a-f]{40}) (refs/heads/[A-Za-z0-9][A-Za-z0-9/._-]*) ([0-9a-f]{40})$') { throw 'Unsupported push ref record.' }
     $localRef = $Matches[1]; $localSha = $Matches[2]; $remoteRef = $Matches[3]; $remoteSha = $Matches[4]
     if ($localSha -cne $Head -or $localSha -eq ('0' * 40) -or $localRef -cne "refs/heads/$Branch" -or $remoteRef -cne $localRef) { throw 'Non-HEAD, deletion, tag or cross-branch push refused.' }
-    return @{ ExpectedHead = $Head; BaseRef = $(if ($remoteSha -eq ('0' * 40)) { 'origin/develop' } else { $remoteSha }) }
+    return @{ ExpectedHead = $Head; BaseRef = (Get-BranchBase $Branch) }
 }
 
 function Invoke-Checked([string]$Executable, [string[]]$Arguments) {
@@ -81,13 +93,12 @@ Push-Location $root
 try {
     $solution = 'src/XN1Lab.XN1Finance.PortfolioAnalytics.Web/XN1Lab.XN1Finance.PortfolioAnalytics.sln'
     $project = 'src/XN1Lab.XN1Finance.PortfolioAnalytics.Web/XN1Lab.XN1Finance.PortfolioAnalytics.Web.csproj'
-    $testProject = ''
     $head = [string](Read-Git @('rev-parse', 'HEAD'))
     if ($PrePush) {
         $target = Get-PushTarget ([Console]::In.ReadToEnd()) $head ([string](Read-Git @('branch', '--show-current')))
         $BaseRef = $target.BaseRef; $ExpectedHead = $target.ExpectedHead; $ForPush = $true
     }
-    if ($BaseRef -cnotmatch '^(origin/(develop|main)|[0-9a-f]{40})$') { throw 'Base must be a fetched integration ref or exact remote SHA.' }
+    $BaseRef = Resolve-BranchBase ([string](Read-Git @('branch', '--show-current'))) $BaseRef
     $base = [string](Read-Git @('rev-parse', '--verify', "$BaseRef^{commit}"))
     Invoke-Checked git @('merge-base', '--is-ancestor', $base, $head)
     if ($ForPush) {
@@ -96,6 +107,7 @@ try {
     }
     $paths = @(Read-ChangedPaths $base)
     $scope = Get-ValidationScope $paths
+    if ($scope -eq 'LOCAL_FIXTURE_REQUIRED') { throw 'LOCAL_FIXTURE_REQUIRED: this main policy gate does not validate application/runtime changes.' }
     $changeHash = Get-ChangeHash $paths
     Invoke-Checked git @('diff', '--check', $base, '--')
     foreach ($required in @('README.md', '.github/CODEOWNERS', $solution, $project)) {
@@ -118,27 +130,8 @@ try {
     if (Test-Path -LiteralPath 'tests/Verify-DevelopmentBoundary.ps1') {
         & './tests/Verify-DevelopmentBoundary.ps1'
     }
-    if ($scope -eq 'dotnet') {
-        if ((& dotnet --version) -notmatch '^9\.0\.') { throw 'Select a .NET 9 SDK before local code validation.' }
-        if (Test-Path -LiteralPath '.github/platform-revision.txt') {
-            $pin = ([IO.File]::ReadAllText((Join-Path $root '.github/platform-revision.txt'))).Trim()
-            if ($pin -cnotmatch '^[0-9a-f]{40}$') { throw 'Invalid Platform pin.' }
-            [xml]$projectXml = [IO.File]::ReadAllText((Join-Path $root $project))
-            $refs = @($projectXml.SelectNodes('//ProjectReference') | ForEach-Object { $_.Include.Replace('\', '/') } | Where-Object { $_ -match '/platform/' })
-            if (!$refs.Count) { throw 'Cannot prove the actual Platform project-reference root.' }
-            $projectDir = Split-Path -Parent (Join-Path $root $project)
-            foreach ($reference in $refs) {
-                $platform = [IO.Path]::GetFullPath((Join-Path $projectDir ($reference -replace '/platform/.*$', '/platform')))
-                if ([string](Read-Git @('-C', $platform, 'rev-parse', 'HEAD')) -cne $pin -or @(Read-Git @('-C', $platform, 'status', '--porcelain')).Count) { throw 'Actual referenced Platform checkout is not clean at the exact pin; no automatic checkout/fetch.' }
-            }
-        }
-        # Single application solution; no hosted runs, Docker build, publish, broker or deploy.
-        Invoke-Checked dotnet @('restore', $solution)
-        Invoke-Checked dotnet @('build', $solution, '-c', 'Release', '--no-restore', '-m:1', '/nodeReuse:false', '/p:UseSharedCompilation=false')
-        if ($testProject) { Invoke-Checked dotnet @('test', $testProject, '-c', 'Release', '--no-build', '--no-restore', '-m:1', '/nodeReuse:false') }
-    }
     if ([string](Read-Git @('rev-parse', 'HEAD')) -cne $head -or (Get-ChangeHash @(Read-ChangedPaths $base)) -cne $changeHash) { throw 'Inputs changed during validation.' }
-    $receipt = [ordered]@{ schemaVersion = 1; task = 'ECODEV-94'; headSha = $head; baseSha = $base; changedInputsSha256 = $changeHash; changedPathCount = $paths.Count; scope = $scope; status = 'PASS'; applicationBuildRun = ($scope -eq 'dotnet'); repositoryTestsRun = ($scope -eq 'dotnet' -and [bool]$testProject); ecosystemFullSuiteRun = $false; artifactCertified = $false; productionAuthorized = $false; pushEligible = [bool]$ForPush; completedAtUtc = [DateTime]::UtcNow.ToString('o') }
+    $receipt = [ordered]@{ schemaVersion = 1; task = 'ECODEV-94'; headSha = $head; baseSha = $base; changedInputsSha256 = $changeHash; changedPathCount = $paths.Count; scope = $scope; status = 'PASS'; applicationBuildRun = $false; repositoryTestsRun = $false; ecosystemFullSuiteRun = $false; artifactCertified = $false; productionAuthorized = $false; pushEligible = [bool]$ForPush; completedAtUtc = [DateTime]::UtcNow.ToString('o') }
     if ($ForPush) {
         Assert-CleanHead $head
         $receiptPath = [string](Read-Git @('rev-parse', '--git-path', 'ecodev94-local-validation.json'))
