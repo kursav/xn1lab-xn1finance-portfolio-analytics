@@ -1,0 +1,297 @@
+name: XN1Finance Portfolio Analytics Development Image
+
+on:
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: 9.0.312
+  IMAGE_NAME: ghcr.io/kursav/xn1lab-xn1finance-portfolio-analytics-dev
+  TRIVY_IMAGE: aquasec/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+
+concurrency:
+  group: finance-development-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_digest: ${{ steps.build.outputs.digest }}
+      platform_revision: ${{ steps.platform.outputs.revision }}
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact Finance source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.SOURCE_SHA }}
+          path: products/xn1finance/portfolio-analytics
+
+      - name: Verify immutable development source
+        working-directory: products/xn1finance/portfolio-analytics
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          if [[ "${{ github.event_name }}" == push ]]; then
+            git fetch --no-tags origin refs/heads/develop:refs/remotes/origin/develop
+            test "$(git rev-parse HEAD)" = "$(git rev-parse origin/develop)"
+          fi
+
+      - name: Resolve pinned Platform revision
+        id: platform
+        shell: bash
+        run: |
+          revision="$(tr -d '\r\n' < products/xn1finance/portfolio-analytics/.github/platform-revision.txt)"
+          [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
+          printf 'revision=%s\n' "$revision" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout pinned Platform source
+        uses: actions/checkout@v4
+        with:
+          repository: kursav/xn1lab-platform
+          ssh-key: ${{ secrets.XN1LAB_PLATFORM_REPO_DEPLOY_KEY }}
+          persist-credentials: false
+          ref: ${{ steps.platform.outputs.revision }}
+          path: platform
+
+      - name: Verify immutable Platform revision
+        working-directory: platform
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${{ steps.platform.outputs.revision }}"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore products/xn1finance/portfolio-analytics/src/XN1Lab.XN1Finance.PortfolioAnalytics.Web/XN1Lab.XN1Finance.PortfolioAnalytics.sln
+
+      - name: Build
+        run: dotnet build products/xn1finance/portfolio-analytics/src/XN1Lab.XN1Finance.PortfolioAnalytics.Web/XN1Lab.XN1Finance.PortfolioAnalytics.sln --configuration Release --no-restore
+
+      - name: Verify formatting
+        run: >-
+          dotnet format products/xn1finance/portfolio-analytics/src/XN1Lab.XN1Finance.PortfolioAnalytics.Web/XN1Lab.XN1Finance.PortfolioAnalytics.sln
+          --verify-no-changes --no-restore --include products/xn1finance/portfolio-analytics/src
+
+      - name: Verify development boundaries
+        shell: pwsh
+        run: ./products/xn1finance/portfolio-analytics/tests/Verify-DevelopmentBoundary.ps1
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract immutable development metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=sha-${{ env.SOURCE_SHA }},enable=${{ github.event_name == 'push' }}
+            type=raw,value=pr-${{ env.SOURCE_SHA }},enable=${{ github.event_name == 'pull_request' }}
+          labels: |
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
+            org.opencontainers.image.xn1lab.environment=development
+            org.opencontainers.image.xn1lab.platform.revision=${{ steps.platform.outputs.revision }}
+
+      - name: Build and publish immutable development image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: products/xn1finance/portfolio-analytics/Dockerfile.development
+          push: ${{ github.event_name == 'push' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=finance-development
+          cache-to: type=gha,mode=max,scope=finance-development
+          provenance: ${{ github.event_name == 'push' && 'mode=max' || 'false' }}
+          sbom: ${{ github.event_name == 'push' }}
+
+      - name: Verify hardened development runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == push ]]; then
+            image_ref="${IMAGE_NAME}@${{ steps.build.outputs.digest }}"
+            docker pull "$image_ref" >/dev/null
+          else
+            image_ref="${IMAGE_NAME}:pr-${SOURCE_SHA}"
+          fi
+          docker run --rm --entrypoint sh "$image_ref" -c 'test ! -e /usr/share/nginx/html/appsettings.json && test ! -e /usr/share/nginx/html/appsettings.Development.json'
+          container_id=""
+          trap '[[ -z "$container_id" ]] || docker rm -f "$container_id" >/dev/null 2>&1 || true' EXIT
+          container_id="$(docker run -d --rm --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            --cap-drop ALL --security-opt no-new-privileges:true --user 101:101 \
+            --mount type=bind,source="${GITHUB_WORKSPACE}/products/xn1finance/portfolio-analytics/config/development/runtime-config.template.json",target=/usr/share/nginx/html/appsettings.json,readonly \
+            --publish 127.0.0.1::8080 "$image_ref")"
+          port="$(docker port "$container_id" 8080/tcp | sed -n 's/.*://p')"
+          code=''
+          for _ in $(seq 1 30); do
+            code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/health/ready" || true)"
+            [[ "$code" == 200 ]] && break
+            sleep 1
+          done
+          [[ "$code" == 200 ]] || { docker logs "$container_id" || true; exit 1; }
+          test "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/health/live")" = 200
+          test "$(curl -fsS "http://127.0.0.1:${port}/appsettings.json" | jq -r '.Authentication.Keycloak.Authority')" = 'https://auth.dev.xn1lab.com'
+          test "$(docker inspect --format '{{.Config.User}}' "$container_id")" = '101:101'
+          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$container_id")" = true
+
+      - name: Scan immutable development image
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence_dir="products/xn1finance/portfolio-analytics/artifacts/development-evidence"
+          image_ref="${IMAGE_NAME}@${{ steps.build.outputs.digest }}"
+          mkdir -p "$evidence_dir" "${GITHUB_WORKSPACE}/.trivy-cache"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${GITHUB_WORKSPACE}/.trivy-cache:/root/.cache/trivy" \
+            -v "${GITHUB_WORKSPACE}/${evidence_dir}:/evidence" \
+            "$TRIVY_IMAGE" image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            --format json --output /evidence/finance-trivy.json "$image_ref"
+          critical_count="$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' "$evidence_dir/finance-trivy.json")"
+          test "$critical_count" -eq 0
+
+      - name: Record immutable development artifact receipt
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          evidence_dir="products/xn1finance/portfolio-analytics/artifacts/development-evidence"
+          mkdir -p "$evidence_dir"
+          config_sha="$(sha256sum products/xn1finance/portfolio-analytics/config/development/runtime-config.template.json | awk '{print $1}')"
+          printf '{"schemaVersion":1,"environment":"development","source":"%s","platform":"%s","configurationSha256":"%s","image":"%s","digest":"%s","certifiesDeployment":false,"productionAuthorized":false}\n' \
+            "$SOURCE_SHA" "${{ steps.platform.outputs.revision }}" "$config_sha" "$IMAGE_NAME" "${{ steps.build.outputs.digest }}" \
+            > "$evidence_dir/finance-development-image.json"
+
+      - name: Upload development evidence
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: finance-development-image-evidence
+          path: products/xn1finance/portfolio-analytics/artifacts/development-evidence
+          if-no-files-found: error
+          retention-days: 14
+
+  deploy-development-image:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    needs: build-test-publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: development
+    concurrency:
+      group: finance-development-rollout
+      cancel-in-progress: false
+    permissions:
+      contents: read
+
+    steps:
+      - name: Reject stale develop workflow before rollout
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          current_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/develop" --jq '.object.sha')"
+          [[ "$current_sha" == "$GITHUB_SHA" ]] || { echo "A newer develop revision exists." >&2; exit 1; }
+
+      - name: Validate rollout inputs
+        env:
+          IMAGE_DIGEST: ${{ needs.build-test-publish.outputs.image_digest }}
+          PLATFORM_REVISION: ${{ needs.build-test-publish.outputs.platform_revision }}
+          ROLLOUT_HOST: ${{ vars.XN1LAB_DEVELOPMENT_ROLLOUT_HOST }}
+          ROLLOUT_USER: ${{ vars.XN1LAB_DEVELOPMENT_ROLLOUT_USER }}
+          ROLLOUT_KEY: ${{ secrets.XN1LAB_DEVELOPMENT_ROLLOUT_SSH_KEY }}
+          ROLLOUT_KNOWN_HOSTS: ${{ secrets.XN1LAB_DEVELOPMENT_ROLLOUT_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$GITHUB_REPOSITORY" == "kursav/xn1lab-xn1finance-portfolio-analytics" ]]
+          [[ "$GITHUB_REF" == "refs/heads/develop" ]]
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PLATFORM_REVISION" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ -n "$ROLLOUT_HOST" && -n "$ROLLOUT_USER" && -n "$ROLLOUT_KEY" && -n "$ROLLOUT_KNOWN_HOSTS" ]]
+
+      - name: Install ephemeral SSH material
+        env:
+          ROLLOUT_KEY: ${{ secrets.XN1LAB_DEVELOPMENT_ROLLOUT_SSH_KEY }}
+          ROLLOUT_KNOWN_HOSTS: ${{ secrets.XN1LAB_DEVELOPMENT_ROLLOUT_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          install -d "$RUNNER_TEMP/xn1lab-rollout-ssh"
+          printf '%s\n' "$ROLLOUT_KEY" > "$RUNNER_TEMP/xn1lab-rollout-ssh/id_ed25519"
+          printf '%s\n' "$ROLLOUT_KNOWN_HOSTS" > "$RUNNER_TEMP/xn1lab-rollout-ssh/known_hosts"
+          ssh-keygen -y -f "$RUNNER_TEMP/xn1lab-rollout-ssh/id_ed25519" >/dev/null
+
+      - name: Deploy exact image and prove rollback
+        env:
+          IMAGE_DIGEST: ${{ needs.build-test-publish.outputs.image_digest }}
+          PLATFORM_REVISION: ${{ needs.build-test-publish.outputs.platform_revision }}
+          ROLLOUT_HOST: ${{ vars.XN1LAB_DEVELOPMENT_ROLLOUT_HOST }}
+          ROLLOUT_USER: ${{ vars.XN1LAB_DEVELOPMENT_ROLLOUT_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          evidence_dir="products/xn1finance/portfolio-analytics/artifacts/development-rollout"
+          mkdir -p "$evidence_dir"
+          payload="$(jq -cn \
+            --arg profile finance \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg githubRef "$GITHUB_REF" \
+            --arg source "$GITHUB_SHA" \
+            --arg platform "$PLATFORM_REVISION" \
+            --arg image "${IMAGE_NAME}@${IMAGE_DIGEST}" \
+            --argjson workflowRun "$GITHUB_RUN_ID" \
+            --argjson workflowAttempt "$GITHUB_RUN_ATTEMPT" \
+            '{schemaVersion:1,environment:"development",productionAuthorized:false,profile:$profile,repository:$repository,githubRef:$githubRef,source:$source,dependencies:{platform:$platform},image:$image,workflowRun:$workflowRun,workflowAttempt:$workflowAttempt}')"
+          printf '%s' "$payload" | ssh -T \
+            -i "$RUNNER_TEMP/xn1lab-rollout-ssh/id_ed25519" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/xn1lab-rollout-ssh/known_hosts" \
+            -o ConnectTimeout=15 "$ROLLOUT_USER@$ROLLOUT_HOST" \
+            | tee "$evidence_dir/finance-development-rollout.json"
+          jq -e --arg source "$GITHUB_SHA" --arg image "${IMAGE_NAME}@${IMAGE_DIGEST}" \
+            '.status == "PASS" and .environment == "development" and .productionAuthorized == false and .productionChanged == false and .profile == "finance" and .source == $source and .image == $image and .restartPassed == true' \
+            "$evidence_dir/finance-development-rollout.json" >/dev/null
+
+      - name: Upload development rollout evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: finance-development-rollout-evidence
+          path: products/xn1finance/portfolio-analytics/artifacts/development-rollout
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Remove ephemeral SSH material
+        if: always()
+        shell: bash
+        run: |
+          if [[ -d "$RUNNER_TEMP/xn1lab-rollout-ssh" ]]; then
+            find "$RUNNER_TEMP/xn1lab-rollout-ssh" -type f -exec shred -u -- {} +
+            rmdir "$RUNNER_TEMP/xn1lab-rollout-ssh"
+          fi
