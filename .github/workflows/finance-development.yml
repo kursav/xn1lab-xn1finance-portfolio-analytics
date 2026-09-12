@@ -141,7 +141,7 @@ jobs:
           else
             image_ref="${IMAGE_NAME}:pr-${SOURCE_SHA}"
           fi
-          docker run --rm --entrypoint sh "$image_ref" -c 'test ! -e /usr/share/nginx/html/appsettings.json && test ! -e /usr/share/nginx/html/appsettings.Development.json'
+          docker run --rm --entrypoint sh "$image_ref" -c 'test -z "$(find /usr/share/nginx/html -maxdepth 1 -type f -iname "appsettings*.json*")"'
           container_id=""
           trap '[[ -z "$container_id" ]] || docker rm -f "$container_id" >/dev/null 2>&1 || true' EXIT
           container_id="$(docker run -d --rm --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m \
@@ -158,6 +158,11 @@ jobs:
           [[ "$code" == 200 ]] || { docker logs "$container_id" || true; exit 1; }
           test "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/health/live")" = 200
           test "$(curl -fsS "http://127.0.0.1:${port}/appsettings.json" | jq -r '.Authentication.Keycloak.Authority')" = 'https://auth.dev.xn1lab.com'
+          curl -fsS --compressed -H 'Accept-Encoding: gzip' "http://127.0.0.1:${port}/appsettings.json" \
+            | jq -e '.Authentication.Keycloak.Authority == "https://auth.dev.xn1lab.com" and .Authentication.Keycloak.Realm == "xn1lab-development" and .CoreServicesApi.BaseUrl == "https://api.dev.xn1lab.com"'
+          for stale_path in appsettings.json.gz appsettings.json.br appsettings.Development.json; do
+            test "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/${stale_path}")" = 404
+          done
           test "$(docker inspect --format '{{.Config.User}}' "$container_id")" = '101:101'
           test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$container_id")" = true
 
