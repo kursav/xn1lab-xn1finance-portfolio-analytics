@@ -11,7 +11,13 @@
 <CascadingAuthenticationState>
     <Router AppAssembly="@typeof(App).Assembly">
         <Found Context="routeData">
-            @if (IsAccessCheckPending())
+            @if (routeData.PageType == typeof(Features.Auth.Pages.LoginCallbackPage) ||
+                 routeData.PageType == typeof(Features.Auth.Pages.LoginPage))
+            {
+                @* Authentication must finish without being unmounted by its own session updates. *@
+                <RouteView RouteData="@routeData" />
+            }
+            else if (IsAccessCheckPending())
             {
                 <LayoutView Layout="@typeof(PortfolioAnalyticsLayout)">
                     <AccessCheckingView />
