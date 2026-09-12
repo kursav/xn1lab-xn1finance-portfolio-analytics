@@ -1,0 +1,11 @@
+.decision-details { margin:.8rem 0; }
+.decision-summary { display:grid; grid-template-columns:1fr 1fr 1.4fr; gap:1rem; background:#f5f8fc; border-radius:12px; padding:1.2rem; }
+.decision-summary div { display:flex; flex-direction:column; gap:.4rem; }
+.decision-summary span,.decision-summary small,.muted { color:#667085; }
+.decision-summary strong { color:#182230; font-size:1.7rem; line-height:1.2; }
+.decision-summary .decision-time { font-size:1.08rem; }
+.decision-summary .buy,.matched { color:#117653; }
+.decision-summary .sell { color:#bb3b45; }
+.decision-details h4 { margin:1.4rem 0 .5rem; }
+.decision-table { overflow-x:auto; }
+@media(max-width:650px) { .decision-summary { grid-template-columns:1fr 1fr; } .decision-summary div:last-child { grid-column:1 / -1; } }

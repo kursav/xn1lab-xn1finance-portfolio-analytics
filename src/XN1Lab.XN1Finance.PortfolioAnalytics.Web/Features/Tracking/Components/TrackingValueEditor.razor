@@ -1,0 +1,111 @@
+@namespace XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Components
+@using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Models
+
+<div class="operand-editor">
+    <label>
+        <span>@Label · değer türü</span>
+        <select value="@Value.Kind" @onchange="ChangeKind" disabled="@ReadOnly">
+            <option value="Constant">Sabit sayı</option>
+            <option value="Indicator">İndikatör</option>
+            <option value="Price">Mum değeri</option>
+            @if (AllowTotalScore || Value.Kind == TrackingValueKind.TotalScore)
+            {
+                <option value="TotalScore" disabled="@(!AllowTotalScore)">Toplam puan</option>
+            }
+        </select>
+    </label>
+    @if (Value.Kind == TrackingValueKind.Constant)
+    {
+        <label><span>Sayı</span><input type="number" step="any" required @bind="Value.Constant" disabled="@ReadOnly" /></label>
+    }
+    else if (Value.Kind == TrackingValueKind.Indicator)
+    {
+        <label>
+            <span>İndikatör bağlantısı</span>
+            <select value="@Value.IndicatorBindingKey" @onchange="ChangeBinding" disabled="@ReadOnly" required>
+                <option value="">Seçin</option>
+                @if (!Indicators.Any(x => x.BindingKey == Value.IndicatorBindingKey) && !string.IsNullOrEmpty(Value.IndicatorBindingKey))
+                {
+                    <option value="@Value.IndicatorBindingKey">@Value.IndicatorBindingKey · bulunamadı</option>
+                }
+                @foreach (var binding in Indicators)
+                {
+                    <option value="@binding.BindingKey">@binding.BindingKey · @binding.IndicatorCode · @TrackingEditorRules.Timeframe(binding.Timeframe)</option>
+                }
+            </select>
+        </label>
+        <label>
+            <span>Çıktı</span>
+            <select @bind="Value.OutputKey" disabled="@ReadOnly" required>
+                @if (!Outputs.Any(x => x.Key == Value.OutputKey) && !string.IsNullOrEmpty(Value.OutputKey))
+                {
+                    <option value="@Value.OutputKey">@Value.OutputKey · bulunamadı</option>
+                }
+                @foreach (var output in Outputs)
+                {
+                    <option value="@output.Key">@output.Key (@output.Unit)</option>
+                }
+            </select>
+        </label>
+    }
+    else if (Value.Kind == TrackingValueKind.Price)
+    {
+        <label><span>Mum süresi</span><select @bind="Value.Timeframe" disabled="@ReadOnly" required>
+            @foreach (var timeframe in Enum.GetValues<TrackingTimeframe>())
+            { <option value="@timeframe">@TrackingEditorRules.Timeframe(timeframe)</option> }
+        </select></label>
+        <label><span>Mum alanı</span><select @bind="Value.PriceField" disabled="@ReadOnly" required>
+            @foreach (var field in Enum.GetValues<TrackingPriceField>())
+            { <option value="@field">@TrackingEditorRules.PriceField(field)</option> }
+        </select></label>
+    }
+    else if (Value.Kind == TrackingValueKind.TotalScore)
+    {
+        <p class="operand-note">Ağırlıklı bileşenlerden hesaplanan toplam: −100 … 100.</p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public TrackingValue Value { get; set; } = new();
+    [Parameter] public EventCallback<TrackingValue> ValueChanged { get; set; }
+    [Parameter] public IReadOnlyList<TrackingIndicator> Indicators { get; set; } = [];
+    [Parameter] public IReadOnlyList<IndicatorDefinition> Catalog { get; set; } = [];
+    [Parameter] public bool AllowTotalScore { get; set; }
+    [Parameter] public bool ReadOnly { get; set; }
+    [Parameter] public string Label { get; set; } = "Değer";
+
+    private IReadOnlyList<IndicatorOutputDefinition> Outputs
+    {
+        get
+        {
+            var binding = Indicators.FirstOrDefault(x => x.BindingKey == Value.IndicatorBindingKey);
+            return Catalog.FirstOrDefault(x => x.Code == binding?.IndicatorCode && x.Version == binding.IndicatorVersion)?.Outputs ?? [];
+        }
+    }
+
+    private async Task ChangeKind(ChangeEventArgs args)
+    {
+        if (ReadOnly || !Enum.TryParse<TrackingValueKind>(args.Value?.ToString(), out var kind)
+            || kind == TrackingValueKind.TotalScore && !AllowTotalScore) return;
+        var value = new TrackingValue { Kind = kind };
+        switch (kind)
+        {
+            case TrackingValueKind.Constant: value.Constant = 0; break;
+            case TrackingValueKind.Price: value.Timeframe = TrackingTimeframe.Hour2; value.PriceField = TrackingPriceField.Close; break;
+            case TrackingValueKind.Indicator:
+                var binding = Indicators.FirstOrDefault();
+                value.IndicatorBindingKey = binding?.BindingKey;
+                value.OutputKey = Catalog.FirstOrDefault(x => x.Code == binding?.IndicatorCode && x.Version == binding.IndicatorVersion)?.Outputs.FirstOrDefault()?.Key;
+                break;
+        }
+        await ValueChanged.InvokeAsync(value);
+    }
+
+    private async Task ChangeBinding(ChangeEventArgs args)
+    {
+        if (ReadOnly) return;
+        Value.IndicatorBindingKey = args.Value?.ToString();
+        Value.OutputKey = Outputs.FirstOrDefault()?.Key;
+        await ValueChanged.InvokeAsync(Value);
+    }
+}

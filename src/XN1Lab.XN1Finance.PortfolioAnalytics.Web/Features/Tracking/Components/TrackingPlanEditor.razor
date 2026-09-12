@@ -1,0 +1,212 @@
+@namespace XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Components
+@using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Models
+
+<section class="plan-editor" aria-labelledby="plan-editor-title" aria-busy="@Busy">
+    <header class="editor-heading">
+        <div><span class="editor-eyebrow">STRATEJİ ATÖLYESİ</span><h2 id="plan-editor-title">@(Plan is null ? "Yeni takip planı" : "Planı düzenle")</h2>
+            <p>Veriyi seç, koşulları birleştir, puanın davranışını tanımla.</p></div>
+        <button type="button" class="secondary-button" @onclick="Cancel" disabled="@Busy">Vazgeç</button>
+    </header>
+    @if (Loading)
+    {
+        <p role="status" class="notice">İndikatör kataloğu ve veri kaynakları yükleniyor…</p>
+    }
+    @if (!string.IsNullOrWhiteSpace(Error))
+    {
+        <div class="notice error" role="alert">@Error</div>
+    }
+    @if (MetadataFailed)
+    {
+        <button type="button" class="secondary-button" disabled="@Busy" @onclick="LoadMetadata">Yeniden dene</button>
+    }
+    @if (Plan?.Status == TrackingPlanStatus.Active)
+    {
+        <p class="notice">Değişiklik kaydedildiğinde yeni sürüm oluşur ve aktif plan duraklatılır. Açık sanal pozisyon varsa sunucu düzenlemeyi engeller.</p>
+    }
+    @if (Definition.SchemaVersion != 1)
+    {
+        <p class="notice error">Bu planın şema sürümü (@Definition.SchemaVersion) bu düzenleyicide desteklenmiyor. Plan salt okunur gösteriliyor.</p>
+    }
+    @if (Plan is not null && Plan.CurrentVersion is null)
+    {
+        <p class="notice error">Planın güncel sürümü yüklenemedi. Düzenlemek için planı yeniden aç.</p>
+    }
+    @if (!Loading)
+    {
+        <form @onsubmit="Save" @onsubmit:preventDefault @onchange="InvalidateValidation">
+            <fieldset class="editor-fields" disabled="@Disabled">
+                <section class="editor-section">
+                    <div class="section-heading"><span class="step-number">01</span><div><h3>Plan ve takip sepeti</h3><p>Her sembol, seçilen sağlayıcıda doğrulanarak eklenir.</p></div></div>
+                    <div class="two-columns">
+                        <label><span>Plan adı</span><input @bind="Name" maxlength="200" required placeholder="Örn. Bitcoin çoklu zaman stratejisi" /></label>
+                        <label><span>Açıklama <small>isteğe bağlı</small></span><input @bind="Description" maxlength="4000" placeholder="Bu plan neyi izliyor?" /></label>
+                    </div>
+                    <div class="instrument-import">
+                        <label><span>Veri kaynağı</span><select @bind="ImportProvider" disabled="@(!Providers.Any(x => x.SupportsInstrumentLookup))">
+                            @foreach (var provider in Providers.Where(x => x.SupportsInstrumentLookup))
+                            { <option value="@provider.ProviderKey">@provider.DisplayName</option> }
+                        </select></label>
+                        <label><span>Sağlayıcı sembolü</span><input @bind="ImportSymbol" maxlength="64" placeholder="BTCUSDT" /></label>
+                        <button type="button" class="secondary-button" disabled="@(Busy || Definition.Instruments.Count >= 50 || string.IsNullOrWhiteSpace(ImportSymbol) || string.IsNullOrWhiteSpace(ImportProvider))" @onclick="ImportInstrument">@(Importing ? "Doğrulanıyor…" : "+ Sepete ekle")</button>
+                    </div>
+                    @if (Definition.Instruments.Count == 0)
+                    { <p class="empty-inline">Başlamak için BTCUSDT gibi bir sembol ekle.</p> }
+                    <ul class="instrument-list">
+                        @foreach (var instrument in Definition.Instruments.ToArray())
+                        {
+                            <li @key="instrument.InstrumentId"><div><strong>@InstrumentLabel(instrument.InstrumentId)</strong><small>@instrument.MarketDataProviderKey · @instrument.InstrumentId.ToString("D")</small></div>
+                                <button type="button" class="text-button" aria-label="@(InstrumentLabel(instrument.InstrumentId) + " sepetten kaldır")" @onclick="() => RemoveInstrument(instrument)">Kaldır</button></li>
+                        }
+                    </ul>
+                </section>
+
+                <section class="editor-section">
+                    <div class="section-heading"><span class="step-number">02</span><div><h3>İndikatörler ve süreler</h3><p>Her bağlantı koşullarda kullanılabilir. Periyot, seçilen mum sayısıdır.</p></div></div>
+                    @foreach (var binding in Definition.Indicators.ToArray())
+                    {
+                        var metadata = Metadata(binding);
+                        <article class="binding-card" @key="binding">
+                            <div class="binding-grid">
+                                <label><span>Bağlantı adı</span><input value="@binding.BindingKey" @onchange="e => RenameBinding(binding, e)" maxlength="64" required pattern="[A-Za-z][A-Za-z0-9_.-]*" /></label>
+                                <label><span>İndikatör / sürüm</span><select value="@($"{binding.IndicatorCode}:{binding.IndicatorVersion}")" @onchange="e => ChangeIndicator(binding, e)">
+                                    @if (!Catalog.Any(x => x.Code == binding.IndicatorCode && x.Version == binding.IndicatorVersion))
+                                    { <option value="@($"{binding.IndicatorCode}:{binding.IndicatorVersion}")">@binding.IndicatorCode v@(binding.IndicatorVersion) · katalogda yok</option> }
+                                    @foreach (var item in Catalog)
+                                    { <option value="@($"{item.Code}:{item.Version}")" disabled="@(!item.IsEnabled)">@item.DisplayName · v@(item.Version)</option> }
+                                </select></label>
+                                <label><span>Mum süresi</span><select @bind="binding.Timeframe">
+                                    @foreach (var timeframe in Enum.GetValues<TrackingTimeframe>())
+                                    { <option value="@timeframe" disabled="@(metadata is not null && !metadata.SupportedTimeframes.Contains(timeframe))">@TrackingEditorRules.Timeframe(timeframe)</option> }
+                                </select></label>
+                                <label><span>Kaynak</span><select @bind="binding.Source">
+                                    @foreach (var source in Enum.GetValues<TrackingPriceField>())
+                                    { <option value="@source" disabled="@(metadata is not null && !metadata.SupportedSources.Contains(source))">@TrackingEditorRules.PriceField(source)</option> }
+                                </select></label>
+                            </div>
+                            <div class="parameter-row">
+                                @foreach (var parameter in binding.Parameters.Keys.ToArray())
+                                {
+                                    var settings = metadata?.Parameters.FirstOrDefault(x => x.Key == parameter);
+                                    <label><span>@ParameterLabel(parameter)</span><input type="number" @bind="binding.Parameters[parameter]" min="@settings?.Minimum" max="@settings?.Maximum" step="@(settings?.IntegerOnly == true ? "1" : "any")" required /></label>
+                                }
+                                <button type="button" class="text-button" disabled="@(Definition.Indicators.Count <= 1 || TrackingEditorRules.References(Definition, binding.BindingKey))" title="Kullanılan indikatörü kaldırmak için önce koşullardaki bağlantılarını değiştirin." @onclick="() => RemoveIndicator(binding)">İndikatörü kaldır</button>
+                            </div>
+                        </article>
+                    }
+                    <button type="button" class="secondary-button" disabled="@(Definition.Indicators.Count >= 32 || !Catalog.Any(x => x.IsEnabled))" @onclick="AddIndicator">+ İndikatör ekle</button>
+                </section>
+
+                <section class="editor-section">
+                    <div class="section-heading"><span class="step-number">03</span><div><h3>Puan sepeti</h3><p>Her bileşen: ağırlık × koşul puanı ÷ 100. Toplam puan bir getiri olasılığı değildir.</p></div>
+                        <span class="weight-badge @(WeightValid ? "valid" : "invalid")" role="status">Ağırlık %@WeightTotal.ToString("0.####") / 100</span></div>
+                    @if (Plan is null)
+                    { <p class="notice subtle">Başlangıç koşulları düzenlenebilir örnektir; geçmiş veride test edilmiş bir yatırım stratejisi değildir.</p> }
+                    @foreach (var component in Definition.ScoreComponents.ToArray())
+                    {
+                        <article class="score-card" @key="component">
+                            <div class="score-settings">
+                                <label><span>Bileşen adı</span><input @bind="component.Key" maxlength="64" required pattern="[A-Za-z][A-Za-z0-9_.-]*" /></label>
+                                <label><span>Ağırlık %</span><input type="number" min="0" max="100" step="0.0001" @bind="component.WeightPercent" required /></label>
+                                <label><span>Doğruysa puan</span><input type="number" min="-100" max="100" step="any" @bind="component.WhenTrueScore" required /></label>
+                                <label><span>Yanlışsa puan</span><input type="number" min="-100" max="100" step="any" @bind="component.WhenFalseScore" required /></label>
+                            </div>
+                            <TrackingRuleEditor Rule="component.Condition" RuleChanged="rule => component.Condition = rule" Indicators="Definition.Indicators" Catalog="Catalog" CanAddNode="CanAddRule" Changed="InvalidateValidation" ReadOnly="Disabled" Label="Puan koşulu" />
+                            <div class="card-footer"><span>Katkı: @((component.WeightPercent * component.WhenFalseScore / 100).ToString("0.##")) veya @((component.WeightPercent * component.WhenTrueScore / 100).ToString("0.##")) puan</span>
+                                <button type="button" class="text-button" disabled="@(Definition.ScoreComponents.Count <= 1)" @onclick="() => RemoveComponent(component)">Bileşeni kaldır</button></div>
+                        </article>
+                    }
+                    <button type="button" class="secondary-button" disabled="@(Definition.ScoreComponents.Count >= 32 || !CanAddRule())" @onclick="AddComponent">+ Puan bileşeni ekle</button>
+                </section>
+
+                <section class="editor-section">
+                    <div class="section-heading"><span class="step-number">04</span><div><h3>Alış ve satış koşulları</h3><p>Toplam puanı başka indikatörlerle birleştir. İkisi aynı anda sağlanırsa satış önceliklidir.</p></div></div>
+                    <div class="signal-rule entry-rule"><h4>Alış sinyali</h4><TrackingRuleEditor @bind-Rule="Definition.EntryRule" Indicators="Definition.Indicators" Catalog="Catalog" AllowTotalScore="true" CanAddNode="CanAddRule" Changed="InvalidateValidation" ReadOnly="Disabled" Label="Alış koşulu" /></div>
+                    <div class="signal-rule exit-rule"><h4>Satış sinyali</h4><TrackingRuleEditor @bind-Rule="Definition.ExitRule" Indicators="Definition.Indicators" Catalog="Catalog" AllowTotalScore="true" CanAddNode="CanAddRule" Changed="InvalidateValidation" ReadOnly="Disabled" Label="Satış koşulu" /></div>
+                    <p class="field-help">@TrackingEditorRules.Rules(Definition).Count() / 128 koşul · en fazla 8 iç içe düzey.</p>
+                </section>
+
+                <section class="editor-section">
+                    <div class="section-heading"><span class="step-number">05</span><div><h3>Zamanlama ve bildirim</h3><p>Hesaplama yalnızca kapanmış mumlarla yapılır. Süreler UTC kapanışlarına göre değerlendirilir.</p></div></div>
+                    <div class="four-columns">
+                        <label><span>Karar mumu</span><select @bind="Definition.Schedule.DecisionTimeframe">
+                            @foreach (var timeframe in Enum.GetValues<TrackingTimeframe>())
+                            { <option value="@timeframe">@TrackingEditorRules.Timeframe(timeframe)</option> }
+                        </select></label>
+                        <label><span>Tarama aralığı · saniye</span><input type="number" min="15" max="86400" @bind="Definition.Schedule.PollIntervalSeconds" required /></label>
+                        <label><span>Sinyal geçerliliği · saniye</span><input type="number" min="15" max="86400" @bind="Definition.Schedule.SignalTtlSeconds" required /></label>
+                        <label><span>İşlemler arası bekleme · saniye</span><input type="number" min="0" max="604800" @bind="Definition.Schedule.CooldownSeconds" required /></label>
+                    </div>
+                    <label class="checkbox-label"><input type="checkbox" @bind="Definition.NotificationsEnabled" /> Uygulama içi sinyal bildirimleri oluştur</label>
+                    @if (!Capabilities.SchedulerAvailable)
+                    { <p class="notice subtle">Sunucuda periyodik tarama şu anda kapalı. Taslak kaydedebilirsin; etkinleştirme için tarama servisinin açılması gerekir.</p> }
+                </section>
+
+                <section class="editor-section">
+                    <div class="section-heading"><span class="step-number">06</span><div><h3>Çalışma modu ve bütçe</h3><p>İzleme sinyal üretir. Sanal işlem, ayrı ve kalıcı bir test cüzdanı kullanır.</p></div></div>
+                    <div class="two-columns">
+                        <label><span>Çalışma modu</span><select @bind="Definition.Execution.Mode">
+                            <option value="Observe">Yalnızca izle ve bildir</option>
+                            <option value="Paper">Sanal alım / satım</option>
+                            @if (Definition.Execution.Mode == TrackingExecutionMode.Live)
+                            { <option value="Live" disabled>Gerçek işlem · desteklenmiyor</option> }
+                        </select></label>
+                        <label><span>Bütçe para birimi</span><input @bind="Definition.Execution.QuoteCurrency" minlength="2" maxlength="16" pattern="[A-Z0-9]{2,16}" required placeholder="USDT" disabled="@WalletFunded" /></label>
+                    </div>
+                    <p class="field-help">Gerçek borsa emirleri bu sürümde kullanılamaz. Sembolün karşı para birimi ile bütçe para birimi aynı olmalıdır.</p>
+                    @if (Definition.Execution.Mode != TrackingExecutionMode.Observe)
+                    {
+                        @if (Definition.Execution.Mode == TrackingExecutionMode.Live)
+                        { <p class="notice error">Kayıtlı gerçek işlem ayarı korunuyor; etkinleştirilemez. Entegrasyon: @(Definition.Execution.BrokerConnectionId?.ToString() ?? "tanımlanmamış")</p> }
+                        <div class="four-columns">
+                            <label><span>Başlangıç sanal bakiyesi</span><input type="number" min="0.01" max="1000000000000" step="any" @bind="Definition.Execution.PaperInitialBalance" disabled="@WalletFunded" required /></label>
+                            <label><span>Alış bütçesi türü</span><select value="@Definition.Execution.SizingKind" @onchange="ChangeSizing"><option value="AvailableBalancePercent">Kullanılabilir bakiyenin yüzdesi</option><option value="FixedQuoteAmount">Sabit tutar</option></select></label>
+                            @if (Definition.Execution.SizingKind == TrackingSizingKind.FixedQuoteAmount)
+                            { <label><span>Her alış için tutar</span><input type="number" min="0.01" max="1000000000000" step="any" @bind="Definition.Execution.FixedQuoteAmount" required /></label> }
+                            else
+                            { <label><span>Her alışta bakiye %</span><input type="number" min="0.0001" max="100" step="any" @bind="Definition.Execution.AvailableBalancePercent" required /></label> }
+                            <label><span>Satılacak pozisyon %</span><input type="number" min="0.0001" max="100" step="any" @bind="Definition.Execution.SellPositionPercent" required /></label>
+                        </div>
+                        <div class="four-columns">
+                            <label><span>Zarar durdur % <small>isteğe bağlı</small></span><input type="number" min="0.0001" max="99.9999" step="any" @bind="Definition.Execution.StopLossPercent" /></label>
+                            <label><span>Kâr al % <small>isteğe bağlı</small></span><input type="number" min="0.0001" max="100" step="any" @bind="Definition.Execution.TakeProfitPercent" /></label>
+                            <label><span>En fazla açık pozisyon</span><input type="number" min="1" max="50" @bind="Definition.Execution.MaxOpenPositions" required /></label>
+                            <label><span>Toplam pozisyon sınırı %</span><input type="number" min="0.0001" max="100" step="any" @bind="Definition.Execution.MaxPlanExposurePercent" required /></label>
+                        </div>
+                        <div class="four-columns">
+                            <label><span>Emir tipi</span><select value="@Definition.Execution.OrderType" @onchange="ChangeOrderType"><option value="Market">Piyasa · sanal fiyat</option>
+                                @if (Definition.Execution.OrderType == TrackingOrderType.Limit)
+                                { <option value="Limit">Limit · yalnızca kayıtlı taslak</option> }
+                            </select></label>
+                            @if (Definition.Execution.OrderType == TrackingOrderType.Limit)
+                            { <label><span>Limit fiyatı</span><input type="number" min="0.00000001" step="any" @bind="Definition.Execution.LimitPrice" required /></label> }
+                            <label><span>Komisyon varsayımı · bp</span><input type="number" min="0" max="1000" step="any" @bind="Definition.Execution.PaperFeeBps" required /></label>
+                            <label><span>Fiyat kayması varsayımı · bp</span><input type="number" min="0" max="1000" step="any" @bind="Definition.Execution.PaperSlippageBps" required /></label>
+                        </div>
+                        <p class="field-help">1 baz puan (bp) = %0,01. Bunlar test varsayımlarıdır. Sanal cüzdan bir kez fonlanır; plan düzenlemek bakiyeyi sıfırlamaz.</p>
+                        @if (WalletFunded)
+                        { <p class="notice subtle">Sanal cüzdan oluşturulduğu için başlangıç bakiyesi ve para birimi değiştirilemez.</p> }
+                        @if (Definition.Execution.OrderType == TrackingOrderType.Limit)
+                        { <p class="notice">Limit emri ayarı korunuyor. Mevcut sanal işlem motoru yalnızca piyasa emriyle etkinleştirilebilir.</p> }
+                    }
+                </section>
+            </fieldset>
+
+            @if (Validation is not null)
+            {
+                <div class="validation-results" aria-live="polite">
+                    @if (Validation.Errors.Count > 0)
+                    { <div class="notice error"><strong>Kaydetmeden önce düzelt</strong><ul>@foreach (var issue in Validation.Errors) { <li data-validation-code="@issue.Code"><code>@issue.Path</code> · @issue.Message</li> }</ul></div> }
+                    @if (Validation.ActivationBlockers.Count > 0)
+                    { <div class="notice"><strong>Etkinleştirme koşulları</strong><p>Taslak kaydedilebilir. Etkinleştirmek için aşağıdakiler çözülmeli.</p><ul>@foreach (var issue in Validation.ActivationBlockers) { <li data-validation-code="@issue.Code"><code>@issue.Path</code> · @issue.Message</li> }</ul></div> }
+                    @if (Validation.CanActivate)
+                    { <p class="notice success">Yapılandırma doğrulandı. Kaydettikten sonra planı ayrıca etkinleştirebilirsin.</p> }
+                </div>
+            }
+            <footer class="editor-actions">
+                <span>@(Plan is null ? "Kaydetmek bir taslak oluşturur." : $"Revizyon {expectedRevision} temel alınır; kayıt yeni sürüm oluşturur.")</span>
+                <div><button type="button" class="secondary-button" disabled="@Disabled" @onclick="Validate">@(Validating ? "Doğrulanıyor…" : "Kuralları doğrula")</button>
+                    <button type="submit" class="primary-button" disabled="@(Disabled || !WeightValid || Definition.Instruments.Count == 0)">@(Saving ? "Kaydediliyor…" : Plan is null ? "Taslağı kaydet" : "Yeni sürümü kaydet")</button></div>
+            </footer>
+        </form>
+    }
+</section>

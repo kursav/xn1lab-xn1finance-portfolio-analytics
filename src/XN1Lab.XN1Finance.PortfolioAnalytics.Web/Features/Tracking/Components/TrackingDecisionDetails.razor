@@ -1,0 +1,41 @@
+@using System.Globalization
+@using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Models
+
+<section class="decision-details">
+    @if (!Decision.IsAvailable)
+    {
+        <div class="ui warning message" role="status"><strong>Hesaplama için yeterli veri yok.</strong><p>@Decision.UnavailableReason</p></div>
+    }
+    <div class="decision-summary">
+        <div><span>Toplam puan</span><strong>@(Decision.IsAvailable ? Number(Decision.Score) : "—")</strong><small>−100 ile +100 arasında</small></div>
+        <div><span>Karar</span><strong class="@Decision.Action.ToString().ToLowerInvariant()">@ActionText(Decision.Action)</strong><small>@(Decision.IsAvailable ? "Planın giriş / çıkış koşulları" : "Veri eksikse işlem üretilmez")</small></div>
+        <div><span>Karar mumu kapanışı</span><strong class="decision-time">@Utc(Decision.DecisionTimeUtc)</strong><small>UTC · Yalnızca kapanmış mumlar</small></div>
+    </div>
+    @if (Decision.Contributions.Count > 0)
+    {
+        <h4>Puanın oluşumu</h4>
+        <div class="decision-table"><table class="ui very basic compact table"><thead><tr><th>Bileşen</th><th>Koşul</th><th>Ağırlık</th><th>Seçilen puan</th><th>Katkı</th></tr></thead><tbody>
+            @foreach (var item in Decision.Contributions)
+            {
+                <tr><td><strong>@item.Key</strong></td><td><span class="@(item.Matched ? "matched" : "muted")">@(item.Matched ? "Sağlandı" : "Sağlanmadı")</span></td><td>%@Number(item.WeightPercent)</td><td>@Number(item.SelectedScore)</td><td><strong>@Number(item.Contribution)</strong></td></tr>
+            }
+        </tbody></table></div>
+    }
+    @if (Decision.IndicatorValues.Count > 0)
+    {
+        <h4>İndikatör değerleri</h4>
+        <div class="decision-table"><table class="ui very basic compact table"><thead><tr><th>Bağlantı / çıktı</th><th>Önceki karar</th><th>Bu karar</th></tr></thead><tbody>
+            @foreach (var value in Decision.IndicatorValues)
+            {
+                <tr><td>@value.BindingKey <span class="muted">/ @value.OutputKey</span></td><td>@Number(value.PreviousValue)</td><td><strong>@Number(value.CurrentValue)</strong></td></tr>
+            }
+        </tbody></table></div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public FinanceEvaluationDecision Decision { get; set; } = new();
+    private static string Number(decimal? value) => value?.ToString("#,##0.########", CultureInfo.GetCultureInfo("tr-TR")) ?? "—";
+    private static string Utc(DateTime value) => value == default ? "—" : value.ToString("dd.MM.yyyy HH:mm", CultureInfo.GetCultureInfo("tr-TR"));
+    private static string ActionText(FinanceDecisionAction action) => action switch { FinanceDecisionAction.Buy => "Al", FinanceDecisionAction.Sell => "Sat", _ => "Bekle" };
+}
