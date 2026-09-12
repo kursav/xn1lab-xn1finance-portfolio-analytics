@@ -27,6 +27,7 @@ public sealed class FinanceEvaluationDecision
     public string DataFingerprint { get; set; } = string.Empty;
     public List<FinanceScoreContribution> Contributions { get; set; } = [];
     public List<FinanceIndicatorValue> IndicatorValues { get; set; } = [];
+    public FinanceQuote? ReferenceQuote { get; set; }
 }
 
 public sealed record FinanceScoreContribution(string Key, bool Matched, decimal WeightPercent, decimal SelectedScore, decimal Contribution);
@@ -45,7 +46,12 @@ public sealed class FinanceEvaluation
     public DateTime EvaluatedAtUtc { get; set; }
     public FinanceEvaluationDecision Decision { get; set; } = new();
     public string? ExecutionReason { get; set; }
+    public List<FinanceForwardOutcome> ForwardOutcomes { get; set; } = [];
 }
+
+public sealed record FinanceForwardOutcome(int HorizonMinutes, string Status, DateTime? DueAtUtc,
+    DateTime? ObservedAtUtc = null, decimal? Price = null, decimal? PriceChangePercent = null,
+    decimal? ActionAlignedChangePercent = null);
 
 public sealed class FinanceSignal
 {
