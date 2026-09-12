@@ -50,12 +50,12 @@ if ($workflow -match 'xn1lab-xn1finance-portfolio-analytics:(latest|production|p
 if ([regex]::Matches($dockerfile, '(?m)^FROM .+@sha256:[0-9a-f]{64}(?:\s+AS\s+\w+)?\r?$').Count -ne 2) {
     throw 'Every Finance development base image must be pinned by digest.'
 }
-foreach ($marker in @('USER 101:101', 'EXPOSE 8080', 'ENTRYPOINT []', "-iname 'appsettings*.json' -delete")) {
+foreach ($marker in @('USER 101:101', 'EXPOSE 8080', 'ENTRYPOINT []', "-iname 'appsettings*.json'", "-iname 'appsettings*.json.gz'", "-iname 'appsettings*.json.br'")) {
     if (-not $dockerfile.Contains($marker, [StringComparison]::Ordinal)) {
         throw "Finance runtime boundary marker is missing: $marker"
     }
 }
-foreach ($marker in @('location = /health/live', 'location = /health/ready', 'listen 8080')) {
+foreach ($marker in @('location = /health/live', 'location = /health/ready', 'listen 8080', 'location = /appsettings.json', 'gzip_static off;', 'try_files $uri =503;')) {
     if (-not $nginx.Contains($marker, [StringComparison]::Ordinal)) {
         throw "Finance health boundary marker is missing: $marker"
     }

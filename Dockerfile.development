@@ -10,7 +10,7 @@ WORKDIR /workspace/products/xn1finance/portfolio-analytics
 RUN dotnet restore src/XN1Lab.XN1Finance.PortfolioAnalytics.Web/XN1Lab.XN1Finance.PortfolioAnalytics.sln
 RUN dotnet publish src/XN1Lab.XN1Finance.PortfolioAnalytics.Web/XN1Lab.XN1Finance.PortfolioAnalytics.Web.csproj \
     --configuration Release --no-restore --output /app/publish
-RUN find /app/publish/wwwroot -maxdepth 1 -type f -iname 'appsettings*.json' -delete
+RUN find /app/publish/wwwroot -maxdepth 1 -type f \( -iname 'appsettings*.json' -o -iname 'appsettings*.json.gz' -o -iname 'appsettings*.json.br' \) -delete
 
 FROM nginx@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46 AS runtime
 WORKDIR /usr/share/nginx/html
