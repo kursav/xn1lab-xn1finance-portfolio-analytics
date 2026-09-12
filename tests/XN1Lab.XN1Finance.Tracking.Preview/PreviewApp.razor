@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="stylesheet" href="/preview-vendor/fomantic-ui/2.9.3/semantic.min.css" />
+    <link rel="stylesheet" href="/_content/XN1Lab.Platform.UI/xn1-platform-ui.css" />
+    <link rel="stylesheet" href="/XN1Lab.XN1Finance.PortfolioAnalytics.Web.styles.css" />
+    <link rel="stylesheet" href="/XN1Lab.XN1Finance.Tracking.Preview.styles.css" />
+    <style>
+        html, body { margin: 0; min-height: 100%; overflow: hidden; background: #f6f7f2; color: #111827; font-family: Lato, Arial, sans-serif; }
+        .preview-banner { height: 43px; box-sizing: border-box; padding: 12px 24px; background: #fff5d6; border-bottom: 1px solid #e7c46a; color: #71450b; font-size: 14px; text-align: center; }
+        .preview-container { max-width: 1800px; height: calc(100vh - 43px); box-sizing: border-box; margin: 0 auto; padding: 20px 24px; }
+        @@media (max-width: 720px) { .preview-container { padding: 12px; } .preview-banner { padding: 10px 12px; } }
+    </style>
+    <HeadOutlet @rendermode="new InteractiveServerRenderMode(prerender: false)" />
+</head>
+<body>
+    <div class="preview-banner" role="note"><strong>Arayüz testi — piyasa verisi canlı, işlemler örnek</strong></div>
+    <PreviewRoutes @rendermode="new InteractiveServerRenderMode(prerender: false)" />
+    <script src="/preview-vendor/jquery/3.7.1/jquery.min.js"></script>
+    <script src="/preview-vendor/fomantic-ui/2.9.3/semantic.min.js"></script>
+    <script src="/_content/XN1Lab.Platform.UI/xn1-platform-ui.js"></script>
+    <script src="/_framework/blazor.web.js"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+.rule-editor { border: 1px solid var(--editor-line, #dce4ea); border-radius: 10px; margin: 0; padding: .85rem; min-inline-size: 0; background: var(--editor-subtle, #f5f8fa); }
+.rule-editor legend { font-size: .72rem; padding: 0 .4rem; color: var(--editor-muted, #647386); font-weight: 600; width: auto; }
+.rule-toolbar { display: flex; align-items: end; gap: .85rem; margin-bottom: .85rem; }
+.rule-toolbar label { max-width: 17rem; width: 100%; }
+.rule-editor label { display: flex; flex-direction: column; gap: .35rem; font-size: .75rem; font-weight: 600; min-width: 0; }
+.rule-editor select { width: 100%; min-width: 0; min-height: 2.6rem; border: 1px solid var(--editor-line, #dce4ea); border-radius: 7px; padding: .55rem; background: var(--editor-surface, #fff); color: var(--editor-ink, #1d3043); font: inherit; font-weight: 400; }
+.rule-editor select:focus-visible, .rule-editor button:focus-visible { outline: 3px solid color-mix(in srgb, var(--editor-accent, #187d85) 40%, transparent); outline-offset: 2px; }
+.comparison-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(9rem, .75fr) minmax(0, 1fr); gap: .8rem; align-items: start; }
+.comparison-operator { padding-top: 0; }
+.rule-hint { color: var(--editor-muted, #647386); font-size: .75rem; line-height: 1.55; font-weight: 400; margin: .65rem 0 0; }
+.rule-children { padding-left: .6rem; border-left: 2px solid var(--editor-line, #dce4ea); }
+.rule-child { margin: .75rem 0; min-width: 0; }
+.rule-add, .rule-remove { font: inherit; font-size: .75rem; color: var(--editor-accent, #187d85); background: var(--editor-surface, #fff); border: 1px solid var(--editor-line, #dce4ea); border-radius: 7px; cursor: pointer; padding: .5rem .7rem; min-height: 2.2rem; }
+.rule-remove { margin: .35rem 0 0; color: var(--editor-muted, #647386); background: transparent; border: 0; }
+.rule-add:disabled, .rule-remove:disabled, .rule-editor:disabled button { opacity: .5; cursor: not-allowed; }
+@media (max-width: 950px) { .comparison-grid { grid-template-columns: minmax(0, 1fr); } .rule-toolbar { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 600px) { .rule-editor { padding: .65rem; } .rule-children { padding-left: .2rem; } }

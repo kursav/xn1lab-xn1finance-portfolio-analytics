@@ -1,0 +1,43 @@
+{
+  "Application": {
+    "AppId": "00000000-0000-0000-0000-000000000101",
+    "AppKey": "xn1finance.portfolio-analytics.web",
+    "AppName": "XN1Finance Portfolio Analytics"
+  },
+  "Branding": {
+    "Key": "xn1finance-portfolio-analytics",
+    "DisplayName": "XN1Finance Portfolio Analytics",
+    "DefaultRoute": "/finance/portfolio-management"
+  },
+  "UI": {
+    "UsePageFooter": true,
+    "DefaultPageSize": 50,
+    "UseDenseTables": true,
+    "PreferFlyoutEditors": true
+  },
+  "Authentication": {
+    "Provider": "Keycloak",
+    "Development": {
+      "Enabled": false
+    },
+    "Keycloak": {
+      "Authority": "https://auth.dev.xn1lab.com",
+      "Realm": "xn1lab-development",
+      "ClientResolution": {
+        "Enabled": true,
+        "ApplicationKey": "xn1finance.portfolio-analytics.web",
+        "OfflineRoute": "/offline"
+      },
+      "RedirectUri": "",
+      "PostLogoutRedirectUri": "",
+      "Scope": "openid profile email offline_access",
+      "SessionStorageKey": "xn1finance.auth.session",
+      "PkceStorageKey": "xn1finance.auth.pkce"
+    }
+  },
+  "CoreServicesApi": {
+    "BaseUrl": "https://api.dev.xn1lab.com",
+    "OwnerAccountHeaderName": "xn1-account-id",
+    "RequestTimeoutSeconds": 30
+  }
+}

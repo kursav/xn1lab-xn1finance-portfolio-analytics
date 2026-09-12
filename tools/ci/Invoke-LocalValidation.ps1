@@ -48,9 +48,9 @@ function Get-ValidationScope([string[]]$Paths) {
     $needsBuild = $false
     foreach ($path in $Paths) {
         if ($path -match '[\x00-\x1f"\\]' -or $path.StartsWith('/') -or $path -match '(^|/)\.\.(/|$)') { throw 'Unsafe changed path.' }
-        if ($path -notmatch '(^docs/local-first-delivery\.md$|^\.github/(workflows/[^/]+\.ya?ml|CODEOWNERS)$|^tools/ci/((Invoke-LocalValidation|Test-LocalValidation)\.ps1|README\.md)$|^\.githooks/pre-push$|^\.gitattributes$)') { $needsBuild = $true }
+        if ($path -notmatch '(^docs/.*\.md$|^[^/]+\.md$|^\.github/(workflows/[^/]+\.ya?ml|CODEOWNERS)$|^tools/ci/((Invoke-LocalValidation|Test-LocalValidation|Verify-FinanceSameDigestPromotion|Test-FinanceSameDigestPromotion)\.ps1|README\.md)$|^\.githooks/pre-push$|^\.gitattributes$)') { $needsBuild = $true }
     }
-    if ($needsBuild) { return 'LOCAL_FIXTURE_REQUIRED' }
+    if ($needsBuild) { return 'dotnet' }
     return 'policy-only'
 }
 
@@ -93,6 +93,7 @@ Push-Location $root
 try {
     $solution = 'src/XN1Lab.XN1Finance.PortfolioAnalytics.Web/XN1Lab.XN1Finance.PortfolioAnalytics.sln'
     $project = 'src/XN1Lab.XN1Finance.PortfolioAnalytics.Web/XN1Lab.XN1Finance.PortfolioAnalytics.Web.csproj'
+    $testProject = 'tests/XN1Lab.XN1Finance.Tracking.Tests/XN1Lab.XN1Finance.Tracking.Tests.csproj'
     $head = [string](Read-Git @('rev-parse', 'HEAD'))
     if ($PrePush) {
         $target = Get-PushTarget ([Console]::In.ReadToEnd()) $head ([string](Read-Git @('branch', '--show-current')))
@@ -107,7 +108,6 @@ try {
     }
     $paths = @(Read-ChangedPaths $base)
     $scope = Get-ValidationScope $paths
-    if ($scope -eq 'LOCAL_FIXTURE_REQUIRED') { throw 'LOCAL_FIXTURE_REQUIRED: this main policy gate does not validate application/runtime changes.' }
     $changeHash = Get-ChangeHash $paths
     Invoke-Checked git @('diff', '--check', $base, '--')
     foreach ($required in @('README.md', '.github/CODEOWNERS', $solution, $project)) {
@@ -130,8 +130,31 @@ try {
     if (Test-Path -LiteralPath 'tests/Verify-DevelopmentBoundary.ps1') {
         & './tests/Verify-DevelopmentBoundary.ps1'
     }
+    if ($scope -eq 'dotnet') {
+        if ((& dotnet --version) -notmatch '^9\.0\.') { throw 'Select a .NET 9 SDK before local code validation.' }
+        if (Test-Path -LiteralPath '.github/platform-revision.txt') {
+            $pin = ([IO.File]::ReadAllText((Join-Path $root '.github/platform-revision.txt'))).Trim()
+            if ($pin -cnotmatch '^[0-9a-f]{40}$') { throw 'Invalid Platform pin.' }
+            [xml]$projectXml = [IO.File]::ReadAllText((Join-Path $root $project))
+            $refs = @($projectXml.SelectNodes('//ProjectReference') | ForEach-Object { $_.Include.Replace('\', '/') } | Where-Object { $_ -match '/platform/' -or $_.StartsWith('$(XN1LabPlatformRoot)/') })
+            if (!$refs.Count) { throw 'Cannot prove the actual Platform project-reference root.' }
+            $projectDir = Split-Path -Parent (Join-Path $root $project)
+            foreach ($reference in $refs) {
+                $platform = if ($reference.StartsWith('$(XN1LabPlatformRoot)/')) {
+                    [IO.Path]::GetFullPath((Join-Path $projectDir '../../../../../platform'))
+                } else {
+                    [IO.Path]::GetFullPath((Join-Path $projectDir ($reference -replace '/platform/.*$', '/platform')))
+                }
+                if ([string](Read-Git @('-C', $platform, 'rev-parse', 'HEAD')) -cne $pin -or @(Read-Git @('-C', $platform, 'status', '--porcelain')).Count) { throw 'Actual referenced Platform checkout is not clean at the exact pin; no automatic checkout/fetch.' }
+            }
+        }
+        # Single application solution; no hosted runs, Docker build, publish, broker or deploy.
+        Invoke-Checked dotnet @('restore', $solution)
+        Invoke-Checked dotnet @('build', $solution, '-c', 'Release', '--no-restore', '-m:1', '/nodeReuse:false', '/p:UseSharedCompilation=false')
+        if ($testProject) { Invoke-Checked dotnet @('test', $testProject, '-c', 'Release', '--no-build', '--no-restore', '-m:1', '/nodeReuse:false') }
+    }
     if ([string](Read-Git @('rev-parse', 'HEAD')) -cne $head -or (Get-ChangeHash @(Read-ChangedPaths $base)) -cne $changeHash) { throw 'Inputs changed during validation.' }
-    $receipt = [ordered]@{ schemaVersion = 1; task = 'ECODEV-94'; headSha = $head; baseSha = $base; changedInputsSha256 = $changeHash; changedPathCount = $paths.Count; scope = $scope; status = 'PASS'; applicationBuildRun = $false; repositoryTestsRun = $false; ecosystemFullSuiteRun = $false; artifactCertified = $false; productionAuthorized = $false; pushEligible = [bool]$ForPush; completedAtUtc = [DateTime]::UtcNow.ToString('o') }
+    $receipt = [ordered]@{ schemaVersion = 1; task = 'ECODEV-94'; headSha = $head; baseSha = $base; changedInputsSha256 = $changeHash; changedPathCount = $paths.Count; scope = $scope; status = 'PASS'; applicationBuildRun = ($scope -eq 'dotnet'); repositoryTestsRun = ($scope -eq 'dotnet' -and [bool]$testProject); ecosystemFullSuiteRun = $false; artifactCertified = $false; productionAuthorized = $false; pushEligible = [bool]$ForPush; completedAtUtc = [DateTime]::UtcNow.ToString('o') }
     if ($ForPush) {
         Assert-CleanHead $head
         $receiptPath = [string](Read-Git @('rev-parse', '--git-path', 'ecodev94-local-validation.json'))

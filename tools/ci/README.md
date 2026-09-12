@@ -1,26 +1,21 @@
-# ECODEV-94 main local-first CI policy gate
+# ECODEV-94 local-first validation
 
-This main/default synchronization changes CI policy only. Automatic hosted runs
-are restricted to develop/main. The development workflow is retained verbatim
-from the reviewed ECODEV-94 source and triggers only on develop; existing main
-publish/deploy bodies and authority gates are unchanged.
+Hosted workflows run only on their existing exact integration push branch (develop or main). There are no PR, feature-push, schedule or workflow-run triggers. Existing publish/deploy jobs, permissions and production authority are unchanged. This branch does not change GitHub required-check settings or fabricate PR check success; the owner must reconcile the integration required-check policy before merging.
 
-Run `pwsh -NoProfile -File tools/ci/Invoke-LocalValidation.ps1`.
-The default base is origin/main for main, hotfix/* and release/*; other supported
-task branches use origin/develop. A conflicting explicit base is refused.
-Every pre-push revalidates the whole exact branch delta against that integration
-base, including subsequent pushes, with one exact current-HEAD branch update.
-Install the opt-in hook with `git config --local core.hooksPath .githooks`.
-For an explicit push receipt, pass `-ForPush -ExpectedHead <full SHA>`.
+Run from the repository root with PowerShell 7:
 
-This narrow main gate accepts only its CI/helper/hook/governance-policy paths.
-Every other path (including application source, tests, dependencies, Docker,
-arbitrary docs and unknown files) returns **LOCAL_FIXTURE_REQUIRED**. It does not
-run or claim an application build, runtime fixture, ecosystem suite or production
-approval. Main's existing solution/project boundary files are checked, but
-develop-only test/runtime files are not copied or required. Appropriate
-application fixtures require a separate reviewed change before those paths can
-be admitted. No direct DB, broker, server, secret or runtime operations occur.
+```powershell
+pwsh -NoProfile -File tools/ci/Invoke-LocalValidation.ps1 -BaseRef origin/develop
+```
 
-The self-test covers PR/topic/tag/schedule rejection, wrong hotfix/release base,
-single exact-HEAD binding, and unknown/source/test paths failing closed.
+Fetch integration refs explicitly before branching/validation. The validator never fetches, checks out dependencies, starts hosted jobs, containers or deployment. Deleted, tracked and untracked changed paths are considered. Docs/CI-only changes run policy, syntax, self-tests and existing boundary scripts without .NET restore/build. Other changes run the actual src/XN1Lab.XN1Finance.PortfolioAnalytics.Web/XN1Lab.XN1Finance.PortfolioAnalytics.sln .NET 9 build; this repository currently has no xUnit test project, so its existing development-boundary script is the test gate. Unknown file types escalate to that application build. Container/image/runtime and full ecosystem tests are NOT certified. Local NuGet restore may access configured package sources.
+
+If a Platform pin exists, code validation refuses unless the actual relative ProjectReference checkout is clean at that pin. It never changes shared Platform state; coordinate its owner instead. Select a .NET 9 SDK for code validation.
+
+Opt in per clone only after reviewing the hook and checking any existing hooks:
+
+```sh
+git config --local core.hooksPath .githooks
+```
+
+Installation is not automatic and must not overwrite an existing hook policy without owner coordination. Hook validation rejects non-HEAD, tag, deletion, cross-branch and multi-ref pushes. New topic refs use fetched origin/develop; updates use the exact remote SHA supplied by Git. A clean HEAD and unchanged inputs are rechecked after validation. The successful exact-head receipt is written and read back at Git's `ecodev94-local-validation.json` path. It is local evidence, not an independent approval or an unbypassable server gate. Any failure blocks the opt-in hook. No receipt grants production authority.

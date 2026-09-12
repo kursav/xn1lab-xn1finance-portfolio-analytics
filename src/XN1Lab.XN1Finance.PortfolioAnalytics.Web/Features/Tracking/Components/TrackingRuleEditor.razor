@@ -1,0 +1,110 @@
+@namespace XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Components
+@using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Models
+
+@if (Depth > 8)
+{
+    <p role="alert">En fazla 8 düzey desteklenir. Üst koşulu düzenleyin.</p>
+}
+else if (Rule is null)
+{
+    <button type="button" class="rule-add" disabled="@(ReadOnly || !CanAdd())" @onclick="AddMissing">+ Koşul tanımla</button>
+}
+else
+{
+    <fieldset class="rule-editor" disabled="@ReadOnly">
+        <legend>@Label</legend>
+        <div class="rule-toolbar">
+            <label>
+                <span>Koşul türü</span>
+                <select value="@Rule.Kind" @onchange="ChangeKind" title="VE / VEYA geçişi alt koşulları korur. Grubu karşılaştırma veya DEĞİL yaparken alt koşullar yeniden oluşturulur.">
+                    <option value="Comparison">Karşılaştırma</option>
+                    <option value="All" disabled="@(Depth >= 8)">Tümü doğru · VE</option>
+                    <option value="Any" disabled="@(Depth >= 8)">En az biri doğru · VEYA</option>
+                    <option value="Not" disabled="@(Depth >= 8)">Doğru değil · DEĞİL</option>
+                </select>
+            </label>
+            @if (Rule.Kind != TrackingRuleKind.Comparison)
+            {
+                <span class="rule-hint">@(Rule.Kind == TrackingRuleKind.All ? "Bütün alt koşullar sağlanmalı." : Rule.Kind == TrackingRuleKind.Any ? "Alt koşullardan biri sağlanmalı." : "Tek alt koşulun sonucu ters çevrilir.")</span>
+            }
+        </div>
+        @if (Rule.Kind == TrackingRuleKind.Comparison)
+        {
+            <div class="comparison-grid">
+                @if (Rule.Left is not null)
+                {
+                    <TrackingValueEditor Value="Rule.Left" ValueChanged="value => SetValue(value, true)" Indicators="Indicators" Catalog="Catalog" AllowTotalScore="AllowTotalScore" ReadOnly="ReadOnly" Label="Sol" />
+                }
+                <label class="comparison-operator"><span>İlişki</span><select @bind="Rule.Comparison" required>
+                    @foreach (var comparison in Enum.GetValues<TrackingComparison>())
+                    { <option value="@comparison">@TrackingEditorRules.Comparison(comparison)</option> }
+                </select></label>
+                @if (Rule.Right is not null)
+                {
+                    <TrackingValueEditor Value="Rule.Right" ValueChanged="value => SetValue(value, false)" Indicators="Indicators" Catalog="Catalog" AllowTotalScore="AllowTotalScore" ReadOnly="ReadOnly" Label="Sağ" />
+                }
+            </div>
+            @if (Rule.Comparison is TrackingComparison.CrossesAbove or TrackingComparison.CrossesBelow)
+            {
+                <p class="rule-hint">Kesme, ardışık karar kapanışlarındaki değerleri karşılaştırır. Günlük değer gün içinde değişmez.</p>
+            }
+        }
+        else
+        {
+            <div class="rule-children">
+                @foreach (var child in Rule.Children.ToArray())
+                {
+                    var index = Rule.Children.IndexOf(child);
+                    <div @key="child" class="rule-child">
+                        <TrackingRuleEditor Rule="child" RuleChanged="value => ReplaceChild(index, value)" Indicators="Indicators" Catalog="Catalog"
+                                            AllowTotalScore="AllowTotalScore" ReadOnly="ReadOnly" Depth="@(Depth + 1)" CanAddNode="CanAddNode" Changed="Changed" Label="@($"Alt koşul {index + 1}")" />
+                        @if (Rule.Kind != TrackingRuleKind.Not)
+                        {
+                            <button type="button" class="rule-remove" aria-label="@($"Alt koşul {index + 1} kaldır")" disabled="@(Rule.Children.Count <= 1)" @onclick="() => RemoveChild(child)">Kaldır</button>
+                        }
+                    </div>
+                }
+            </div>
+            @if (Rule.Kind != TrackingRuleKind.Not || Rule.Children.Count == 0)
+            {
+                <button type="button" class="rule-add" disabled="@(Depth >= 8 || !CanAdd())" @onclick="AddChild">+ Alt koşul</button>
+            }
+        }
+    </fieldset>
+}
+
+@code {
+    [Parameter] public TrackingRule? Rule { get; set; }
+    [Parameter] public EventCallback<TrackingRule> RuleChanged { get; set; }
+    [Parameter] public IReadOnlyList<TrackingIndicator> Indicators { get; set; } = [];
+    [Parameter] public IReadOnlyList<IndicatorDefinition> Catalog { get; set; } = [];
+    [Parameter] public bool AllowTotalScore { get; set; }
+    [Parameter] public bool ReadOnly { get; set; }
+    [Parameter] public int Depth { get; set; } = 1;
+    [Parameter] public string Label { get; set; } = "Koşul";
+    [Parameter] public Func<bool>? CanAddNode { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private bool CanAdd() => CanAddNode?.Invoke() ?? true;
+    private async Task AddMissing() { if (!ReadOnly && CanAdd()) { await RuleChanged.InvokeAsync(TrackingEditorRules.EmptyComparison()); await Changed.InvokeAsync(); } }
+    private async Task ChangeKind(ChangeEventArgs args)
+    {
+        if (ReadOnly || !Enum.TryParse<TrackingRuleKind>(args.Value?.ToString(), out var kind) || kind == Rule?.Kind) return;
+        if (Rule?.Kind is TrackingRuleKind.All or TrackingRuleKind.Any && kind is TrackingRuleKind.All or TrackingRuleKind.Any)
+        {
+            Rule.Kind = kind;
+            await RuleChanged.InvokeAsync(Rule);
+            await Changed.InvokeAsync();
+            return;
+        }
+        if (kind != TrackingRuleKind.Comparison && (Depth >= 8 || !CanAdd())) return;
+        var replacement = kind == TrackingRuleKind.Comparison ? TrackingEditorRules.EmptyComparison()
+            : new TrackingRule { Kind = kind, Children = [Rule?.Kind == TrackingRuleKind.Comparison ? Rule : TrackingEditorRules.EmptyComparison()] };
+        await RuleChanged.InvokeAsync(replacement);
+        await Changed.InvokeAsync();
+    }
+    private async Task SetValue(TrackingValue value, bool left) { if (Rule is null || ReadOnly) return; if (left) Rule.Left = value; else Rule.Right = value; await Changed.InvokeAsync(); }
+    private async Task AddChild() { if (Rule is null || ReadOnly || Depth >= 8 || !CanAdd()) return; Rule.Children.Add(TrackingEditorRules.EmptyComparison()); await Changed.InvokeAsync(); }
+    private async Task RemoveChild(TrackingRule child) { if (Rule is null || ReadOnly || Rule.Children.Count <= 1) return; Rule.Children.Remove(child); await Changed.InvokeAsync(); }
+    private async Task ReplaceChild(int index, TrackingRule value) { if (Rule is null || ReadOnly || index < 0 || index >= Rule.Children.Count) return; Rule.Children[index] = value; await Changed.InvokeAsync(); }
+}

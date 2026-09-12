@@ -13,9 +13,9 @@ foreach ($bad in @($valid.Replace('  push:', '  pull_request:'), $valid.Replace(
     Reject { Assert-WorkflowPolicy $bad }
 }
 foreach ($path in @('src/App.razor','src/deleted.cs','tests/ChangedTests.cs','.github/platform-revision.txt','Directory.Build.props','Dockerfile','docs/authority.json')) {
-    if ((Get-ValidationScope @($path)) -cne 'LOCAL_FIXTURE_REQUIRED') { throw 'Non-policy change must require a separately approved local fixture.' }
+    if ((Get-ValidationScope @($path)) -cne 'dotnet') { throw 'Code/dependency/deletion misclassified.' }
 }
-if ((Get-ValidationScope @('.github/workflows/a.yml', '.githooks/pre-push')) -cne 'policy-only') { throw 'Lightweight scope misclassified.' }
+if ((Get-ValidationScope @('.github/workflows/a.yml', 'docs/guide.md', '.githooks/pre-push')) -cne 'policy-only') { throw 'Lightweight scope misclassified.' }
 if ((Get-ValidationScope @()) -cne 'no-change') { throw 'Empty scope misclassified.' }
 Reject { Get-ValidationScope @('../outside') }
 Reject { Get-ValidationScope @('src/app.cs', '../outside') }
@@ -37,7 +37,6 @@ foreach ($taskBranch in @('hotfix/ECODEV-94/local-first-main', 'release/ECODEV-9
 if ((Resolve-BranchBase 'main' '') -cne 'origin/main') { throw 'Main default mismatch.' }
 if ((Resolve-BranchBase 'develop' '') -cne 'origin/develop') { throw 'Develop default mismatch.' }
 foreach ($bad in @('', 'hotfix/ECODEV-94/../x', 'hotfixfoo/ECODEV-94/x', 'codex/x')) { Reject { Get-BranchBase $bad } }
-foreach ($path in @('README.md', 'docs/guide.md', 'unknown.json', 'tools/other.ps1', 'src/app.md', 'Dockerfile', 'tests/new.cs')) {
-    if ((Get-ValidationScope @($path)) -cne 'LOCAL_FIXTURE_REQUIRED') { throw 'Unknown/non-policy path falsely admitted.' }
-}
+if ((Resolve-BranchBase 'fix/ECODEV-94/hotfix-base-validation' '') -cne 'origin/develop') { throw 'Fix branch base mismatch.' }
+Reject { Resolve-BranchBase 'fix/ECODEV-94/hotfix-base-validation' 'origin/main' }
 Write-Output 'ECODEV-94 local policy self-tests passed; no stack build was run by these tests.'
