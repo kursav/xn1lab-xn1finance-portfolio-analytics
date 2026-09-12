@@ -28,9 +28,16 @@
     public string? State { get; set; }
 
     private string? Error { get; set; }
+    private bool completionStarted;
 
     protected override async Task OnParametersSetAsync()
     {
+        if (completionStarted)
+        {
+            return;
+        }
+
+        completionStarted = true;
         if (string.IsNullOrWhiteSpace(Code))
         {
             Error = "Keycloak callback code is missing.";
