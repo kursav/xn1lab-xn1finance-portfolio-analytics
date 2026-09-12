@@ -80,6 +80,9 @@ jobs:
       - name: Build
         run: dotnet build products/xn1finance/portfolio-analytics/src/XN1Lab.XN1Finance.PortfolioAnalytics.Web/XN1Lab.XN1Finance.PortfolioAnalytics.sln --configuration Release --no-restore
 
+      - name: Test tracking workspace
+        run: dotnet test products/xn1finance/portfolio-analytics/tests/XN1Lab.XN1Finance.Tracking.Tests/XN1Lab.XN1Finance.Tracking.Tests.csproj --configuration Release --no-build --no-restore
+
       - name: Verify formatting
         run: >-
           dotnet format products/xn1finance/portfolio-analytics/src/XN1Lab.XN1Finance.PortfolioAnalytics.Web/XN1Lab.XN1Finance.PortfolioAnalytics.sln

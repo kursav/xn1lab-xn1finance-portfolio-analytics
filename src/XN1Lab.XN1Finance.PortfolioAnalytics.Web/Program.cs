@@ -31,6 +31,7 @@ builder.Services.AddXN1SaaSHost(builder.Configuration, options =>
 });
 
 builder.Services.AddScoped<IPortfolioAnalyticsService, ApiPortfolioAnalyticsService>();
+builder.Services.AddScoped<XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Services.IFinanceTrackingService, XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Services.ApiFinanceTrackingService>();
 builder.Services.AddScoped<PortfolioAnalyticsPermissionState>();
 builder.Services.AddSingleton<PortfolioAnalyticsModuleRegistry>();
 builder.Services.AddSingleton<IPlatformModuleCatalog>(sp => sp.GetRequiredService<PortfolioAnalyticsModuleRegistry>());

@@ -1,0 +1,6 @@
+.operand-editor { display: flex; flex-direction: column; gap: .65rem; min-width: 0; }
+.operand-editor label { display: flex; flex-direction: column; gap: .35rem; font-size: .75rem; font-weight: 600; min-width: 0; }
+.operand-editor input, .operand-editor select { width: 100%; min-width: 0; min-height: 2.6rem; border: 1px solid var(--editor-line, #dce4ea); border-radius: 7px; padding: .55rem; background: var(--editor-surface, #fff); color: var(--editor-ink, #1d3043); font: inherit; font-weight: 400; }
+.operand-editor input:focus-visible, .operand-editor select:focus-visible { outline: 3px solid color-mix(in srgb, var(--editor-accent, #187d85) 40%, transparent); outline-offset: 2px; }
+.operand-editor input:disabled, .operand-editor select:disabled { opacity: .7; }
+.operand-note { color: var(--editor-muted, #647386); font-size: .75rem; line-height: 1.55; margin: .1rem 0; }

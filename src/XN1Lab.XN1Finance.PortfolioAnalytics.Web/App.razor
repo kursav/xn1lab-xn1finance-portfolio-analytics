@@ -19,7 +19,7 @@
             }
             else if (CurrentRouteHasAccess())
             {
-                <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(PortfolioAnalyticsLayout)">
+                <AuthorizeRouteView @key="CurrentAccountAccessor.Current?.Id" RouteData="@routeData" DefaultLayout="@typeof(PortfolioAnalyticsLayout)">
                     <Authorizing>
                         <LayoutView Layout="@typeof(PortfolioAnalyticsLayout)">
                             <AccessCheckingView />

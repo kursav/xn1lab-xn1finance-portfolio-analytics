@@ -1,0 +1,196 @@
+@page "/finance/portfolio-management/tracking"
+@page "/finance/portfolio/tracking"
+@attribute [Authorize]
+@implements IDisposable
+@using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Models
+@using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Components
+@using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Services
+@inject IFinanceTrackingService TrackingService
+@inject PortfolioAnalyticsPermissionState Permissions
+
+<PageTitle>Takip planları · XN1Finance</PageTitle>
+
+<WorkspacePage Title="Takip planları">
+    <WorkspacePageContent>
+        <PortfolioAnalyticsModuleTabs />
+        @if (!Permissions.CanRead)
+        {
+            <div class="ui warning message" role="alert"><i class="lock icon" aria-hidden="true"></i>Takip planlarını görüntülemek için okuma yetkisi gerekiyor.</div>
+        }
+        else
+        {
+            <div class="tracking-workspace">
+                @if (Capabilities is not null)
+                {
+                    <div class="tracking-runtime-strip">
+                        <span class="runtime-state @(Capabilities.SchedulerAvailable ? "running" : "stopped")"><span class="status-dot"></span>@(Capabilities.SchedulerAvailable ? "Otomatik tarama servisi açık" : "Otomatik tarama servisi kapalı")</span>
+                        <span><i class="flask icon" aria-hidden="true"></i> Sanal işlem @(Capabilities.PaperTradingAvailable ? "kullanılabilir" : "kapalı")</span>
+                        <span><i class="bell outline icon" aria-hidden="true"></i> Uygulama içi bildirimler</span>
+                        <span class="tracking-muted">Gerçek emir desteği yok</span>
+                    </div>
+                    @if (!Capabilities.SchedulerAvailable)
+                    {
+                        <div class="ui info message">Sunucunun tarama servisi kapalı. Planlarını hazırlayıp kararı tek seferlik hesaplayabilirsin; otomatik takip için sunucuda tarama servisinin açılması gerekiyor.</div>
+                    }
+                }
+                @if (!Permissions.CanWrite)
+                {
+                    <div class="ui info message"><i class="lock icon" aria-hidden="true"></i>Salt okunur erişim. Plan ve bildirim değişiklikleri için yazma yetkisi gerekiyor.</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(PageError))
+                {
+                    <div class="ui negative message" role="alert">@PageError <button type="button" class="ui mini basic button" disabled="@ListLoading" @onclick="ReloadWorkspaceAsync">Yeniden dene</button></div>
+                }
+                <div class="tracking-grid">
+                    <aside class="tracking-plans-panel">
+                        <div class="tracking-panel-heading"><div><h2>Planların</h2><span class="tracking-muted">@(ListHasLoaded ? $"{PlanPage.TotalItems} kayıt" : "Veri bekleniyor")</span></div><button type="button" class="ui small primary button" disabled="@(!Permissions.CanWrite || Busy || EditorOpen)" data-testid="tracking-create" @onclick="CreatePlan"><i class="plus icon" aria-hidden="true"></i> Yeni plan</button></div>
+                        <form class="tracking-search ui form" @onsubmit="SearchAsync" @onsubmit:preventDefault>
+                            <div class="ui fluid action input"><input aria-label="Plan adıyla ara" placeholder="Plan adıyla ara…" @bind="SearchText" /><button type="submit" class="ui icon button" aria-label="Ara" disabled="@ListLoading"><i class="search icon" aria-hidden="true"></i></button></div>
+                            <select aria-label="Plan durumuna göre filtrele" @bind="StatusFilter" @bind:after="SearchAsync"><option value="">Tüm durumlar</option>@foreach (var status in Enum.GetValues<TrackingPlanStatus>()) { <option value="@status">@StatusLabel(status)</option> }</select>
+                        </form>
+                        <div class="tracking-plan-list" aria-busy="@ListLoading">
+                            @if (ListLoading)
+                            {
+                                <div class="tracking-empty"><div class="ui active inline loader"></div><p>Planlar yükleniyor…</p></div>
+                            }
+                            else if (!ListHasLoaded)
+                            {
+                                <div class="tracking-empty"><i class="cloud icon" aria-hidden="true"></i><strong>Planlar alınamadı</strong><p>Sunucu bağlantısı kurulduğunda kayıtların burada görünecek.</p></div>
+                            }
+                            else if (PlanPage.Items.Count == 0)
+                            {
+                                <div class="tracking-empty"><i class="sliders horizontal icon" aria-hidden="true"></i><strong>@(HasFilters ? "Bu filtrelerle plan bulunamadı" : "İlk takip planını oluştur")</strong><p>Varlığını seç, indikatörlerini ve ağırlıklarını belirle. Planın taslak olarak kaydedilir.</p></div>
+                            }
+                            else
+                            {
+                                @foreach (var plan in PlanPage.Items)
+                                {
+                                    <button type="button" @key="plan.Id" class="tracking-plan-card @(Selected?.Id == plan.Id && !EditorOpen ? "selected" : "")" aria-pressed="@(Selected?.Id == plan.Id && !EditorOpen)" disabled="@(Busy || EditorOpen)" data-testid="tracking-select" @onclick="() => SelectPlanAsync(plan.Id)">
+                                        <span class="tracking-card-top"><strong>@plan.Name</strong><span class="tracking-badge @plan.Status.ToString().ToLowerInvariant()">@StatusLabel(plan.Status)</span></span>
+                                        <span class="tracking-card-description">@(string.IsNullOrWhiteSpace(plan.Description) ? "Çoklu indikatör takip planı" : plan.Description)</span>
+                                        <span class="tracking-card-bottom"><span>Sürüm @plan.CurrentVersionNumber</span><span>@Utc(plan.UpdatedAtUtc)</span></span>
+                                    </button>
+                                }
+                            }
+                        </div>
+                        <TrackingPager PageNumber="ListPageNumber" PageSize="PageSize" TotalItems="PlanPage.TotalItems" Busy="@(ListLoading || Busy || EditorOpen)" PageChanged="ChangeListPageAsync" Label="Plan sayfaları" />
+                    </aside>
+
+                    <main class="tracking-detail-panel" aria-busy="@(DetailLoading || PanelLoading || PreviewBusy)">
+                        @if (EditorOpen)
+                        {
+                            <TrackingPlanEditor @key="EditorKey" Plan="EditorPlan" ReadOnly="@(!Permissions.CanWrite)" Saved="OnSavedAsync" Cancelled="CloseEditor" />
+                        }
+                        else if (DetailLoading)
+                        {
+                            <div class="tracking-empty tracking-large-empty"><div class="ui active inline loader"></div><p>Plan yükleniyor…</p></div>
+                        }
+                        else if (Selected is null)
+                        {
+                            <div class="tracking-empty tracking-large-empty"><span class="tracking-empty-orbit"><i class="chart line icon" aria-hidden="true"></i></span><h2>Bir plan, açıklanabilir kararlar.</h2><p>Soldan bir plan seç veya yeni plan oluştur. Her sinyalin puanını, hesaplama ayrıntılarını ve sanal işlem sonucunu burada göreceksin.</p><div class="tracking-empty-tags"><span>Çoklu zaman dilimi</span><span>Ağırlıklı puan</span><span>Kalıcı sanal portföy</span></div></div>
+                        }
+                        else
+                        {
+                            <header class="tracking-detail-header"><div><div class="tracking-eyebrow">TAKİP PLANI · SÜRÜM @Selected.CurrentVersionNumber</div><h2>@Selected.Name</h2><p>@Selected.Description</p></div><span class="tracking-badge @Selected.Status.ToString().ToLowerInvariant()">@StatusLabel(Selected.Status)</span></header>
+                            <div class="tracking-header-actions" aria-label="Plan işlemleri">
+                                <button type="button" class="ui small primary button" title="Planı mevcut piyasa verileriyle bir kez hesaplar; planın otomatik takip durumunu değiştirmez." disabled="@(Busy || Capabilities?.EvaluationAvailable != true)" data-testid="tracking-preview" @onclick="PreviewAsync"><i class="calculator icon" aria-hidden="true"></i> @(PreviewBusy ? "Hesaplanıyor…" : "Kararı hesapla")</button>
+                                @if (Selected.Status == TrackingPlanStatus.Active)
+                                {
+                                    <button type="button" class="ui small basic button" title="Yeni otomatik girişleri durdurur; açık sanal pozisyonların koruma kontrolleri sürer." disabled="@(!Permissions.CanWrite || Busy)" data-testid="tracking-pause" @onclick="() => ChangeStatusAsync(TrackingPlanStatus.Paused)"><i class="pause icon" aria-hidden="true"></i> Taramayı durdur</button>
+                                }
+                                else if (Selected.Status != TrackingPlanStatus.Archived)
+                                {
+                                    <button type="button" class="ui small basic teal button" title="Planı doğrular ve onayından sonra otomatik taramayı başlatır." disabled="@(!Permissions.CanWrite || Busy || Capabilities?.SchedulerAvailable != true || Definition?.Execution.Mode == TrackingExecutionMode.Live)" data-testid="tracking-activate" @onclick="PrepareActivationAsync"><i class="play icon" aria-hidden="true"></i> Otomatik takibi başlat</button>
+                                }
+                                <button type="button" class="ui small basic button" disabled="@(!Permissions.CanWrite || Busy || Selected.Status == TrackingPlanStatus.Archived)" data-testid="tracking-edit" @onclick="EditPlan"><i class="edit outline icon" aria-hidden="true"></i> Planı düzenle</button>
+                                <button type="button" class="ui small basic button" disabled="@Busy" @onclick="ReloadSelectedAsync"><i class="refresh icon" aria-hidden="true"></i> Yenile</button>
+                                @if (Selected.Status != TrackingPlanStatus.Archived)
+                                {
+                                    <button type="button" class="ui small basic button tracking-archive" disabled="@(!Permissions.CanWrite || Busy)" @onclick="PrepareArchive"><i class="archive icon" aria-hidden="true"></i> Arşivle</button>
+                                }
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(DetailError)) { <div class="ui negative message" role="alert">@DetailError</div> }
+                            @if (!string.IsNullOrWhiteSpace(SuccessMessage)) { <div class="ui positive message" role="status">@SuccessMessage</div> }
+                            @if (PendingStatus.HasValue)
+                            {
+                                <section class="tracking-confirm" aria-label="Plan durumu değişikliği">
+                                    <strong>@(PendingStatus == TrackingPlanStatus.Active ? "Otomatik takibi başlat" : "Bu planı arşivle")</strong>
+                                    <p>@(PendingStatus == TrackingPlanStatus.Active ? $"{ModeLabel(Definition?.Execution.Mode)} modunda planın takvimine göre otomatik tarama başlayacak. Tek seferlik karar hesaplama bu işlemi yapmaz." : "Arşivlenen plan tekrar etkinleştirilemez. Geçmiş kayıtlar korunur; açık sanal pozisyon varsa sunucu arşivlemeyi reddeder.")</p>
+                                    @if (ActivationValidation is not null)
+                                    {
+                                        @foreach (var issue in ActivationValidation.Errors.Concat(ActivationValidation.ActivationBlockers)) { <div class="tracking-validation-issue"><i class="exclamation circle icon" aria-hidden="true"></i> @issue.Message <small>@issue.Code</small></div> }
+                                    }
+                                    <div class="tracking-confirm-actions"><button type="button" class="ui small primary button" disabled="@(Busy || (PendingStatus == TrackingPlanStatus.Active && ActivationValidation?.CanActivate != true))" data-testid="tracking-confirm-status" @onclick="ConfirmStatusAsync">@(PendingStatus == TrackingPlanStatus.Active ? "Evet, otomatik takibi başlat" : "Evet, arşivle")</button><button type="button" class="ui small basic button" disabled="@Busy" @onclick="CancelStatus">Vazgeç</button></div>
+                                </section>
+                            }
+                            <nav class="tracking-tabs" aria-label="Plan bölümleri">
+                                @foreach (var tab in Tabs) { <button type="button" class="@(ActiveTab == tab.Key ? "active" : "")" aria-current="@(ActiveTab == tab.Key ? "page" : null)" disabled="@Busy" data-testid="@($"tracking-tab-{tab.Key}")" @onclick="() => SwitchTabAsync(tab.Key)"><i class="@tab.Icon icon" aria-hidden="true"></i>@tab.Label</button> }
+                            </nav>
+                            @if (!string.IsNullOrWhiteSpace(PanelError)) { <div class="ui negative message" role="alert">@PanelError <button class="ui mini basic button" disabled="@PanelLoading" @onclick="RefreshPanelAsync">Yeniden dene</button></div> }
+                            @if (PanelLoading || PreviewBusy)
+                            {
+                                <div class="tracking-empty"><div class="ui active inline loader"></div><p>@(PreviewBusy ? "Kapanmış mumlar ve indikatörler hesaplanıyor…" : "Kayıtlar yükleniyor…")</p></div>
+                            }
+                            else if (string.IsNullOrWhiteSpace(PanelError))
+                            {
+                                @switch (ActiveTab)
+                                {
+                                    case "overview":
+                                        if (Definition is not null)
+                                        {
+                                            <p class="tracking-mode-line"><span>Çalışma modu:</span> <strong>@ModeLabel(Definition.Execution.Mode)</strong></p>
+                                        }
+                                        break;
+                                    case "preview":
+                                        <div class="tracking-inline-note"><i class="info circle icon" aria-hidden="true"></i> Bu tek seferlik hesaplama emir, sinyal veya bildirim oluşturmaz. Gösterilen fiyat, belirtilen zamandaki son işlem fiyatıdır.</div>
+                                        @if (Previews is null) { <div class="tracking-empty"><i class="calculator icon" aria-hidden="true"></i><strong>Henüz karar hesaplanmadı</strong><p>“Kararı hesapla” ile indikatörleri ve puan katkılarını bir kez çalıştır.</p></div> }
+                                        else { @foreach (var preview in Previews) { <article class="tracking-preview-card"><div class="tracking-section-heading"><h3>@InstrumentName(preview.InstrumentId)</h3>@if (preview.Quote is not null) { <span><strong>@Price(preview.Quote.Price) @preview.Quote.Currency</strong><small class="tracking-muted"> @Utc(preview.Quote.AsOfUtc) UTC</small></span> }</div><TrackingDecisionDetails Decision="preview.Decision" /></article> } }
+                                        break;
+                                    case "evaluations":
+                                        <div class="tracking-section-heading"><h3>Değerlendirme geçmişi</h3><span class="tracking-muted">UTC saatleri</span></div>
+                                        @if (EvaluationPage.Items.Count == 0) { <div class="tracking-empty"><i class="history icon" aria-hidden="true"></i><strong>Henüz değerlendirme yok</strong><p>Etkin plan tarandığında hesaplama ve veri durumu burada görünür.</p></div> }
+                                        else { <div class="tracking-table"><table class="ui very basic compact table"><thead><tr><th>Karar zamanı</th><th>Varlık</th><th>Tür</th><th>Puan / karar</th><th>Durum</th><th></th></tr></thead><tbody>@foreach (var evaluation in EvaluationPage.Items) { <tr><td>@Utc(evaluation.DecisionTimeUtc)</td><td>@InstrumentName(evaluation.InstrumentId)</td><td>@EvaluationKindLabel(evaluation.Kind)</td><td>@Number(evaluation.Decision.Score) / @ActionLabel(evaluation.Decision.Action)</td><td>@(evaluation.ExecutionReason ?? evaluation.Decision.UnavailableReason ?? (evaluation.Decision.IsAvailable ? "Hesaplandı" : "Veri yok"))</td><td><button type="button" class="ui mini basic button" @onclick="() => ToggleEvaluation(evaluation)">@(ExpandedEvaluation?.Id == evaluation.Id ? "Kapat" : "Ayrıntı")</button></td></tr>@if (ExpandedEvaluation?.Id == evaluation.Id) { <tr><td colspan="6"><TrackingDecisionDetails Decision="evaluation.Decision" /></td></tr> } }</tbody></table></div> }
+                                        <TrackingPager PageNumber="EvaluationPageNumber" PageSize="PageSize" TotalItems="EvaluationPage.TotalItems" Busy="PanelLoading" PageChanged="ChangeEvaluationPageAsync" />
+                                        break;
+                                    case "signals":
+                                        <div class="tracking-section-heading"><h3>Sinyal geçmişi</h3><span class="tracking-muted">Sinyal oluşması işlemin gerçekleştiği anlamına gelmez</span></div>
+                                        @if (SignalPage.Items.Count == 0) { <div class="tracking-empty"><i class="bolt icon" aria-hidden="true"></i><strong>Henüz sinyal yok</strong><p>Giriş veya çıkış koşulları sağlandığında sinyaller burada görünür.</p></div> }
+                                        else { <div class="tracking-table"><table class="ui very basic compact table"><thead><tr><th>Oluşturulma (UTC)</th><th>Varlık</th><th>Karar</th><th>Puan</th><th>Mod</th><th>Neden</th><th>Son geçerlilik (UTC)</th></tr></thead><tbody>@foreach (var signal in SignalPage.Items) { <tr><td>@Utc(signal.CreatedAtUtc)</td><td>@InstrumentName(signal.InstrumentId)</td><td><span class="tracking-badge @signal.Action.ToString().ToLowerInvariant()">@ActionLabel(signal.Action)</span></td><td>@Number(signal.Score)</td><td>@ModeLabel(signal.Mode)</td><td>@signal.Reason</td><td>@Utc(signal.ExpiresAtUtc)</td></tr> }</tbody></table></div> }
+                                        <TrackingPager PageNumber="SignalPageNumber" PageSize="PageSize" TotalItems="SignalPage.TotalItems" Busy="PanelLoading" PageChanged="ChangeSignalPageAsync" />
+                                        break;
+                                    case "paper":
+                                        <div class="tracking-inline-note"><i class="flask icon" aria-hidden="true"></i> Sanal işlemlerdir. Komisyon ve fiyat kayması planın varsayımlarıdır; gerçek borsa işlemi yapılmaz.</div>
+                                        @if (Paper?.Wallet is null) { <div class="tracking-empty"><i class="wallet icon" aria-hidden="true"></i><strong>Sanal cüzdan henüz oluşturulmadı</strong><p>Plan sanal işlem modunda çalıştığında cüzdan sunucuda oluşturulur ve kalıcı olarak saklanır.</p></div> }
+                                        else
+                                        {
+                                            var wallet = Paper.Wallet;
+                                            <div class="tracking-metrics"><div><span>Nakit bakiye</span><strong>@Money(wallet.CashBalance, wallet.Currency)</strong></div><div><span>Başlangıç bakiyesi</span><strong>@Money(wallet.InitialBalance, wallet.Currency)</strong></div><div><span>Gerçekleşmiş kâr / zarar</span><strong class="@(wallet.RealizedPnl < 0 ? "tracking-loss" : "")">@Money(wallet.RealizedPnl, wallet.Currency)</strong></div><div><span>Toplam komisyon</span><strong>@Money(wallet.TotalFees, wallet.Currency)</strong></div></div>
+                                            <p class="tracking-muted">Cüzdan güncellemesi: @Utc(wallet.UpdatedAtUtc) UTC. Açık pozisyonların son kayıtlı değerleri anlık fiyat değildir.</p>
+                                        }
+                                        <h3>Açık pozisyonlar</h3>
+                                        @if (Paper?.Positions.Count > 0) { <div class="tracking-table"><table class="ui very basic compact table"><thead><tr><th>Varlık</th><th>Miktar</th><th>Ort. maliyet</th><th>Son kayıtlı fiyat</th><th>Zarar durdur / kâr al</th><th>Güncelleme (UTC)</th></tr></thead><tbody>@foreach (var position in Paper.Positions) { <tr><td>@InstrumentName(position.InstrumentId)</td><td>@Quantity(position.Quantity)</td><td>@Price(position.AverageCost)</td><td>@Price(position.LastMarkPrice)</td><td>@Price(position.StopLossPrice) / @Price(position.TakeProfitPrice)</td><td>@Utc(position.UpdatedAtUtc)</td></tr> }</tbody></table></div> } else { <p class="tracking-muted">Açık sanal pozisyon bulunmuyor.</p> }
+                                        <div class="tracking-section-heading"><h3>Sanal işlem geçmişi</h3><span class="tracking-muted">Gerçekleşen simülasyon kayıtları</span></div>
+                                        @if (TradePage.Items.Count == 0) { <p class="tracking-muted">Henüz sanal işlem gerçekleşmedi.</p> } else { <div class="tracking-table"><table class="ui very basic compact table"><thead><tr><th>Zaman (UTC)</th><th>Varlık / yön</th><th>Miktar</th><th>İşlem fiyatı</th><th>Komisyon</th><th>Gerçekleşmiş K/Z</th><th>İşlem sonrası nakit</th></tr></thead><tbody>@foreach (var trade in TradePage.Items) { <tr><td>@Utc(trade.ExecutedAtUtc)</td><td>@InstrumentName(trade.InstrumentId) <span class="tracking-badge @trade.Side.ToString().ToLowerInvariant()">@ActionLabel(trade.Side)</span></td><td>@Quantity(trade.Quantity)</td><td>@Price(trade.FillPrice)</td><td>@Price(trade.Fee)</td><td>@Number(trade.RealizedPnl)</td><td>@Number(trade.CashBalanceAfter)</td></tr> }</tbody></table></div> }
+                                        <TrackingPager PageNumber="TradePageNumber" PageSize="PageSize" TotalItems="TradePage.TotalItems" Busy="PanelLoading" PageChanged="ChangeTradePageAsync" />
+                                        break;
+                                    case "notifications":
+                                        <div class="tracking-section-heading"><div><h3>Bildirim kutusu</h3><p class="tracking-muted">Bu planın uygulama içi bildirimleri</p></div><label class="tracking-checkbox"><input type="checkbox" @bind="UnreadOnly" @bind:after="ChangeUnreadAsync" /> Yalnızca okunmamış</label></div>
+                                        @if (NotificationPage.Items.Count == 0) { <div class="tracking-empty"><i class="bell outline icon" aria-hidden="true"></i><strong>@(UnreadOnly ? "Okunmamış bildirim yok" : "Henüz bildirim yok")</strong><p>Planın bildirimleri açıksa oluşan sinyaller burada görünür.</p></div> }
+                                        else { <div class="tracking-notifications">@foreach (var notification in NotificationPage.Items) { <article class="@(notification.ReadAtUtc.HasValue ? "read" : "unread")"><i class="bell outline icon" aria-hidden="true"></i><div><strong>@notification.Title</strong><p>@notification.Message</p><small>@Utc(notification.CreatedAtUtc) UTC · @InstrumentName(notification.InstrumentId)</small></div>@if (!notification.ReadAtUtc.HasValue) { <button type="button" class="ui mini basic button" disabled="@(!Permissions.CanWrite || Busy)" @onclick="() => MarkReadAsync(notification)">Okundu</button> } else { <span class="tracking-muted">Okundu</span> }</article> }</div> }
+                                        <TrackingPager PageNumber="NotificationPageNumber" PageSize="PageSize" TotalItems="NotificationPage.TotalItems" Busy="PanelLoading" PageChanged="ChangeNotificationPageAsync" />
+                                        break;
+                                    case "versions":
+                                        <div class="tracking-section-heading"><h3>Plan sürümleri</h3><span class="tracking-muted">Kaydedilmiş tanımlar değiştirilemez</span></div>
+                                        <div class="tracking-table"><table class="ui very basic compact table"><thead><tr><th>Sürüm</th><th>Ad</th><th>Oluşturulma (UTC)</th><th></th></tr></thead><tbody>@foreach (var version in VersionPage.Items) { <tr><td><strong>v@(version.VersionNumber)</strong> @if (version.VersionNumber == Selected.CurrentVersionNumber) { <span class="tracking-badge active">Güncel</span> }</td><td>@version.Name</td><td>@Utc(version.CreatedAtUtc)</td><td><button type="button" class="ui mini basic button" disabled="@Busy" @onclick="() => InspectVersionAsync(version.VersionNumber)">Tanımı gör</button></td></tr> }</tbody></table></div>
+                                        <TrackingPager PageNumber="VersionPageNumber" PageSize="PageSize" TotalItems="VersionPage.TotalItems" Busy="PanelLoading" PageChanged="ChangeVersionPageAsync" />
+                                        @if (InspectedVersion is not null) { <section class="tracking-snapshot"><h4>Sürüm @InspectedVersion.VersionNumber · @InspectedVersion.Name</h4><p class="tracking-muted">Plan tanımı ve bu sürüme sabitlenmiş indikatör kataloğu</p><pre>@VersionJson</pre></section> }
+                                        break;
+                                }
+                            }
+                        }
+                    </main>
+                </div>
+            </div>
+        }
+    </WorkspacePageContent>
+</WorkspacePage>

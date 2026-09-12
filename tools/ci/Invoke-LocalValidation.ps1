@@ -93,7 +93,7 @@ Push-Location $root
 try {
     $solution = 'src/XN1Lab.XN1Finance.PortfolioAnalytics.Web/XN1Lab.XN1Finance.PortfolioAnalytics.sln'
     $project = 'src/XN1Lab.XN1Finance.PortfolioAnalytics.Web/XN1Lab.XN1Finance.PortfolioAnalytics.Web.csproj'
-    $testProject = ''
+    $testProject = 'tests/XN1Lab.XN1Finance.Tracking.Tests/XN1Lab.XN1Finance.Tracking.Tests.csproj'
     $head = [string](Read-Git @('rev-parse', 'HEAD'))
     if ($PrePush) {
         $target = Get-PushTarget ([Console]::In.ReadToEnd()) $head ([string](Read-Git @('branch', '--show-current')))
@@ -136,11 +136,15 @@ try {
             $pin = ([IO.File]::ReadAllText((Join-Path $root '.github/platform-revision.txt'))).Trim()
             if ($pin -cnotmatch '^[0-9a-f]{40}$') { throw 'Invalid Platform pin.' }
             [xml]$projectXml = [IO.File]::ReadAllText((Join-Path $root $project))
-            $refs = @($projectXml.SelectNodes('//ProjectReference') | ForEach-Object { $_.Include.Replace('\', '/') } | Where-Object { $_ -match '/platform/' })
+            $refs = @($projectXml.SelectNodes('//ProjectReference') | ForEach-Object { $_.Include.Replace('\', '/') } | Where-Object { $_ -match '/platform/' -or $_.StartsWith('$(XN1LabPlatformRoot)/') })
             if (!$refs.Count) { throw 'Cannot prove the actual Platform project-reference root.' }
             $projectDir = Split-Path -Parent (Join-Path $root $project)
             foreach ($reference in $refs) {
-                $platform = [IO.Path]::GetFullPath((Join-Path $projectDir ($reference -replace '/platform/.*$', '/platform')))
+                $platform = if ($reference.StartsWith('$(XN1LabPlatformRoot)/')) {
+                    [IO.Path]::GetFullPath((Join-Path $projectDir '../../../../../platform'))
+                } else {
+                    [IO.Path]::GetFullPath((Join-Path $projectDir ($reference -replace '/platform/.*$', '/platform')))
+                }
                 if ([string](Read-Git @('-C', $platform, 'rev-parse', 'HEAD')) -cne $pin -or @(Read-Git @('-C', $platform, 'status', '--porcelain')).Count) { throw 'Actual referenced Platform checkout is not clean at the exact pin; no automatic checkout/fetch.' }
             }
         }
