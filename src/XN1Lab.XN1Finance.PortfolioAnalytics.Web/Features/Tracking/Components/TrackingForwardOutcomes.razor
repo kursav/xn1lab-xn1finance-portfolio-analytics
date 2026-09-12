@@ -1,0 +1,32 @@
+@using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Models
+@using System.Globalization
+
+@foreach (var outcome in Outcomes)
+{
+    <span class="ui small basic label" title="@Detail(outcome)">
+        @outcome.HorizonMinutes dk:
+        @(outcome.Status switch
+        {
+            "measured" => outcome.PriceChangePercent?.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture) + "%" + Direction(outcome),
+            "pending" => "Bekleniyor",
+            "missing" => "Ölçüm eksik",
+            _ => "Referans yok"
+        })
+    </span>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<FinanceForwardOutcome> Outcomes { get; set; } = [];
+
+    private static string Direction(FinanceForwardOutcome outcome) => outcome.ActionAlignedChangePercent switch
+    {
+        > 0 => " · Yön uygun",
+        < 0 => " · Yön ters",
+        0 => " · Değişmedi",
+        _ => ""
+    };
+
+    private static string Detail(FinanceForwardOutcome outcome) => outcome.Status == "measured"
+        ? $"Fiyat değişimi; işlem kâr/zararı değildir. Ölçüm: {outcome.ObservedAtUtc:yyyy-MM-dd HH:mm:ss} UTC."
+        : "Hedef zamandan sonraki 90 saniye içinde kaydedilmiş ilk fiyatla ölçülür.";
+}

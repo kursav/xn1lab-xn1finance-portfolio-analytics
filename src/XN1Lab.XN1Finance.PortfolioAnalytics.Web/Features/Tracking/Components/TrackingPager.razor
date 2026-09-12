@@ -1,0 +1,17 @@
+<nav class="tracking-pagination" aria-label="@Label">
+    <span>@TotalItems kayıt · Sayfa @PageNumber / @PageCount</span>
+    <div class="ui mini buttons">
+        <button type="button" class="ui button" aria-label="Önceki sayfa" disabled="@(Busy || PageNumber <= 1)" @onclick="() => PageChanged.InvokeAsync(PageNumber - 1)"><i class="chevron left icon" aria-hidden="true"></i> Önceki</button>
+        <button type="button" class="ui button" aria-label="Sonraki sayfa" disabled="@(Busy || PageNumber >= PageCount)" @onclick="() => PageChanged.InvokeAsync(PageNumber + 1)">Sonraki <i class="chevron right icon" aria-hidden="true"></i></button>
+    </div>
+</nav>
+
+@code {
+    [Parameter] public int PageNumber { get; set; } = 1;
+    [Parameter] public int PageSize { get; set; } = 20;
+    [Parameter] public int TotalItems { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public string Label { get; set; } = "Kayıt sayfaları";
+    [Parameter] public EventCallback<int> PageChanged { get; set; }
+    private int PageCount => Math.Max(1, (int)Math.Ceiling(TotalItems / (double)Math.Max(1, PageSize)));
+}

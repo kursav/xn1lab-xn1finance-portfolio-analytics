@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1
+
+FROM mcr.microsoft.com/dotnet/sdk@sha256:f190d2dd9eef2899c91ac323caa0bd2b39334a5400ba93013e5199da39dad940 AS build
+WORKDIR /workspace
+
+COPY platform ./platform
+COPY products/xn1finance/portfolio-analytics ./products/xn1finance/portfolio-analytics
+
+WORKDIR /workspace/products/xn1finance/portfolio-analytics
+RUN dotnet restore src/XN1Lab.XN1Finance.PortfolioAnalytics.Web/XN1Lab.XN1Finance.PortfolioAnalytics.sln
+RUN dotnet publish src/XN1Lab.XN1Finance.PortfolioAnalytics.Web/XN1Lab.XN1Finance.PortfolioAnalytics.Web.csproj \
+    --configuration Release --no-restore --output /app/publish
+RUN find /app/publish/wwwroot -maxdepth 1 -type f \( -iname 'appsettings*.json' -o -iname 'appsettings*.json.gz' -o -iname 'appsettings*.json.br' \) -delete
+
+FROM nginx@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46 AS runtime
+WORKDIR /usr/share/nginx/html
+
+COPY products/xn1finance/portfolio-analytics/nginx/development-nginx.conf /etc/nginx/nginx.conf
+COPY products/xn1finance/portfolio-analytics/nginx/development.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/publish/wwwroot ./
+RUN chown -R 101:101 /usr/share/nginx/html /etc/nginx/nginx.conf /etc/nginx/conf.d
+
+USER 101:101
+EXPOSE 8080
+ENTRYPOINT []
+CMD ["nginx", "-g", "daemon off;"]

@@ -1,0 +1,2 @@
+.tracking-pagination { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1rem 0; color:#667085; font-size:.82rem; flex-wrap:wrap; }
+.tracking-pagination .ui.buttons { margin:0; }
