@@ -20,6 +20,12 @@ public class TrackingFixtureService : IFinanceTrackingService
  public SaveTrackingPlanRequest? SavedRequest {get;private set;}
  public List<ChangeTrackingPlanStatusRequest> StatusRequests {get;}=[];
  public TaskCompletionSource<TrackingPlan>? DelayedPlan {get;set;}
+ public virtual Task<FinanceStrategyResults> GetStrategyResultsAsync(DateTime? fromUtc = null, DateTime? toUtc = null, IReadOnlyList<Guid>? planIds = null, CancellationToken cancellationToken = default)
+ {
+  Calls.Add("strategy-results");
+  var end = toUtc ?? DateTime.UtcNow;
+  return Task.FromResult(StrategyResultsFixture.Create(fromUtc ?? end.AddDays(-7), end));
+ }
  public IReadOnlyList<IndicatorDefinition> Catalog {get;}=[
   new(){Code="RSI", Version=1,DisplayName="Relative Strength Index",CalculatorKey="builtin.rsi.v1",Parameters=[new(){Key="period",Minimum=2,Maximum=500,Default=14}],Outputs=[new(){Key="value",Unit="oscillator"}],SupportedSources=[TrackingPriceField.Close]},
   new(){Code="EMA", Version=1,DisplayName="Exponential Moving Average",CalculatorKey="builtin.ema.v1",Parameters=[new(){Key="period",Minimum=2,Maximum=500,Default=50}],Outputs=[new(){Key="value",Unit="price"}],SupportedSources=[TrackingPriceField.Close]}];

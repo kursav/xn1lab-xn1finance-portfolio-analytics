@@ -1,0 +1,4 @@
+.result-rate { display:flex; flex-direction:column; gap:.25rem; min-width:115px; }
+.result-rate strong { font-size:.92rem; color:#182638; font-variant-numeric:tabular-nums; }
+.result-rate small { color:#69768a; font-size:.72rem; white-space:nowrap; }
+.result-rate .result-sample { color:#946e32; }

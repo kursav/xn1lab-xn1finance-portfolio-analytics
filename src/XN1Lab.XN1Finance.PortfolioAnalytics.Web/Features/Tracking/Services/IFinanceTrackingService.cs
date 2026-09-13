@@ -8,6 +8,8 @@ namespace XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Services;
 public interface IFinanceTrackingService
 {
     Task<TrackingCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default);
+    Task<FinanceStrategyResults> GetStrategyResultsAsync(DateTime? fromUtc = null, DateTime? toUtc = null,
+        IReadOnlyList<Guid>? planIds = null, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<IndicatorDefinition>> GetIndicatorsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<FinanceMarketDataCapabilities>> GetProvidersAsync(CancellationToken cancellationToken = default);
     Task<TrackingPlanValidationResult> ValidateAsync(TrackingPlanDefinition definition, CancellationToken cancellationToken = default);

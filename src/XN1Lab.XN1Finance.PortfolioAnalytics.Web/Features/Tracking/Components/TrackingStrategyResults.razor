@@ -1,0 +1,89 @@
+@namespace XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Components
+@using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Models
+
+<section class="strategy-results" aria-label="Strateji sonuçları" aria-busy="@Loading">
+    <header class="results-toolbar">
+        <div><h2>Sonuçlar</h2>
+            @if (Results is not null) { <small>@Utc(Results.FromUtc) – @Utc(Results.ToUtc) UTC</small> }
+        </div>
+        <div class="results-actions">
+            <select aria-label="Sonuç dönemi" @bind="Days" @bind:after="LoadAsync" disabled="@Loading"><option value="1">Son 24 saat</option><option value="7">Son 7 gün</option><option value="30">Son 30 gün</option></select>
+            <button type="button" class="ui small basic button" disabled="@Loading" @onclick="LoadAsync"><i class="refresh icon" aria-hidden="true"></i> Yenile</button>
+        </div>
+    </header>
+    @if (Loading)
+    {
+        <p role="status" class="results-muted">Sonuçlar yükleniyor…</p>
+    }
+    else if (Error is not null)
+    {
+        <p role="alert" class="results-error">@Error</p>
+    }
+    else if (Results?.Plans.Count == 0)
+    {
+        <p class="results-muted">Bu dönemde karşılaştırılacak kayıt yok.</p>
+    }
+    else if (Results is not null)
+    {
+        <div class="results-table-scroll">
+            <table class="ui very basic compact table results-table">
+                <thead><tr><th scope="col">Plan / sürüm</th>
+                    @foreach (var horizon in Horizons) { <th scope="col">Yön · @horizon dk</th> }
+                    <th scope="col" title="Dönemde açılıp tamamen kapanan sanal pozisyonlar; komisyon ve fiyat kayması dahil.">Sanal başarı</th>
+                    <th scope="col">Net K/Z</th><th scope="col">İşlem başına</th><th scope="col"><span class="results-visually-hidden">Ayrıntılar</span></th>
+                </tr></thead>
+                <tbody>
+                @foreach (var plan in Results.Plans)
+                {
+                    <tr @key="plan.PlanVersionId" data-plan-version="@plan.PlanVersionId">
+                        <th scope="row" class="results-plan"><strong>@plan.PlanName</strong><small>v@(plan.VersionNumber) · @Mode(plan.Mode) · @Status(plan.Status)</small><small>@plan.DirectionalDecisionCount Al/Sat kararı · @plan.UnavailableCount veri eksik</small></th>
+                        @foreach (var horizon in Horizons)
+                        {
+                            var direction = plan.Direction.FirstOrDefault(x => x.HorizonMinutes == horizon);
+                            <td>@DirectionRate(direction)</td>
+                        }
+                        <td><div class="results-paper-rate"><strong>@Rate(plan.Paper.ClosedEpisodeCount > 0 ? plan.Paper.WinRatePercent : null)</strong><small>@plan.Paper.Wins / @plan.Paper.ClosedEpisodeCount kârlı işlem</small>
+                            @if (plan.Paper.OpenEpisodeCount > 0) { <small>@plan.Paper.OpenEpisodeCount açık işlem</small> }
+                            @if (plan.Paper.ClosedEpisodeCount is > 0 and < MinimumSampleSize) { <small class="results-sample">Az örnek</small> }
+                            @if (plan.Paper.UnmatchedFillCount > 0) { <small class="results-error">@plan.Paper.UnmatchedFillCount eşleşmeyen kayıt</small> }
+                        </div></td>
+                        <td class="results-numeric @(plan.Paper.NetPnl < 0 ? "results-loss" : "")">@Money(plan.Paper.ClosedEpisodeCount > 0 ? plan.Paper.NetPnl : null, plan.QuoteCurrency)</td>
+                        <td class="results-numeric"><strong>@Money(plan.Paper.AverageNetPnl, plan.QuoteCurrency)</strong><small>@Rate(plan.Paper.AverageReturnPercent)</small></td>
+                        <td><button type="button" class="ui mini basic button" aria-expanded="@(ExpandedVersionId == plan.PlanVersionId)" aria-controls="@($"result-detail-{plan.PlanVersionId:N}")" @onclick="() => Toggle(plan.PlanVersionId)">@(ExpandedVersionId == plan.PlanVersionId ? "Kapat" : "Ayrıntı")</button></td>
+                    </tr>
+                    @if (ExpandedVersionId == plan.PlanVersionId)
+                    {
+                        <tr class="results-detail-row"><td colspan="8"><div class="results-detail" id="@($"result-detail-{plan.PlanVersionId:N}")">
+                            <h3>İndikatörler</h3>
+                            <div class="results-indicators">@foreach (var indicator in plan.IndicatorDefinitions) { <span><strong>@Indicator(indicator)</strong> · @TrackingEditorRules.Timeframe(indicator.Timeframe)<small>@indicator.BindingKey</small></span> }</div>
+                            @if (plan.Indicators.Count == 0)
+                            {
+                                <p class="results-muted">Bu sürüm için koşul sonucu yok.</p>
+                            }
+                            else
+                            {
+                                <p class="results-muted results-condition-caption">Koşul sağlandığındaki sonuçlar; tek başına indikatör etkisi değildir.</p>
+                                <table class="ui very basic compact table results-conditions"><thead><tr><th scope="col">Koşul / bağlantı</th><th scope="col">Ağırlık</th><th scope="col">Eşleşen karar</th>@foreach (var horizon in Horizons) { <th scope="col">Yön · @horizon dk</th> }</tr></thead>
+                                    <tbody>@foreach (var component in plan.Indicators)
+                                    {
+                                        <tr><th scope="row"><strong>@component.ComponentKey</strong><small>@string.Join(", ", component.Bindings)</small></th><td>@Rate(component.WeightPercent)</td><td>@component.MatchedDirectionalDecisionCount Al/Sat<small>@component.MatchedDecisionCount tüm karar</small></td>
+                                            @foreach (var horizon in Horizons) { <td>@DirectionRate(component.Direction.FirstOrDefault(x => x.HorizonMinutes == horizon))</td> }
+                                        </tr>
+                                    }</tbody>
+                                </table>
+                            }
+                            @if (plan.Paper.Exits.Count > 0)
+                            {
+                                <h3>Çıkış nedenleri</h3>
+                                <table class="ui very basic compact table results-exits"><thead><tr><th scope="col">Neden</th><th scope="col">Kapanan işlem</th><th scope="col">Kârlı</th><th scope="col">Net K/Z</th></tr></thead><tbody>@foreach (var exit in plan.Paper.Exits) { <tr><th scope="row">@ExitReason(exit.Reason)</th><td>@exit.ClosedEpisodeCount</td><td>@exit.Wins</td><td>@Money(exit.NetPnl, plan.QuoteCurrency)</td></tr> }</tbody></table>
+                            }
+                            @if (plan.Paper.ClosedEpisodeCount > 0) { <p class="results-muted">Ort. süre: @Number(plan.Paper.AverageHoldingMinutes) dk · Komisyon: @Money(plan.Paper.ClosedEpisodeFees, plan.QuoteCurrency)</p> }
+                        </div></td></tr>
+                    }
+                }
+                </tbody>
+            </table>
+        </div>
+        <footer class="results-footer"><span>Yön: Al/Sat sonrası brüt hareket · Sanal K/Z: kapanan işlemler, masraflar dahil</span><span>@Utc(Results.GeneratedAtUtc) UTC</span></footer>
+    }
+</section>

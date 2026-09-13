@@ -10,10 +10,15 @@ using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.PortfolioAnalytics.Servi
 using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Services;
 using XN1Lab.XN1Finance.Tracking.Preview;
 
-var builder = WebApplication.CreateBuilder(args);
+var previewPort = PreviewPort.Parse(args);
+var builder = WebApplication.CreateBuilder();
 // This UI fixture host has no API client, login provider, credentials or broker adapters.
 // Explicit loopback binding prevents an environment variable from exposing test permissions.
-builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 7547));
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Configure(new ConfigurationBuilder().Build());
+    options.Listen(IPAddress.Loopback, previewPort);
+});
 builder.WebHost.UseStaticWebAssets();
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddPlatformUi();
