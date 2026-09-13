@@ -175,7 +175,7 @@
                         <div class="four-columns">
                             <label><span>En uzun işlem · dakika <small>isteğe bağlı</small></span><input name="maxHoldingMinutes" type="number" min="1" max="10080" step="1" @bind="Definition.Execution.MaxHoldingMinutes" disabled="@(Definition.Execution.Mode == TrackingExecutionMode.Live)" /></label>
                             <label><span>İz süren zarar durdur % <small>isteğe bağlı</small></span><input name="trailingStopPercent" type="number" min="0.0001" max="99.9999" step="any" @bind="Definition.Execution.TrailingStopPercent" disabled="@(Definition.Execution.Mode == TrackingExecutionMode.Live)" /></label>
-                            <label><span>İz sürmeyi başlat · kazanç % <small>isteğe bağlı</small></span><input name="trailingStopActivationPercent" type="number" min="0" max="100" step="any" placeholder="Hemen" @bind="Definition.Execution.TrailingStopActivationPercent" disabled="@(Definition.Execution.Mode == TrackingExecutionMode.Live)" /></label>
+                            <label><span>İz sürmeyi başlat · fiyat artışı % <small>isteğe bağlı</small></span><input name="trailingStopActivationPercent" type="number" min="0" max="100" step="any" placeholder="Hemen" @bind="Definition.Execution.TrailingStopActivationPercent" disabled="@(Definition.Execution.Mode == TrackingExecutionMode.Live)" /></label>
                         </div>
                         <div class="four-columns">
                             <label><span>Emir tipi</span><select value="@Definition.Execution.OrderType" @onchange="ChangeOrderType"><option value="Market">Piyasa · sanal fiyat</option>
