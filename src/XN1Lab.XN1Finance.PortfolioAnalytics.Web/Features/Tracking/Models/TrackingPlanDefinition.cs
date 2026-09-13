@@ -84,6 +84,10 @@ public sealed class TrackingExecutionSettings
     public decimal? LimitPrice { get; set; }
     public decimal? StopLossPercent { get; set; }
     public decimal? TakeProfitPercent { get; set; }
+    public int? MaxHoldingMinutes { get; set; }
+    public decimal? TrailingStopPercent { get; set; }
+    /// <summary>Null or zero activates the trailing stop immediately.</summary>
+    public decimal? TrailingStopActivationPercent { get; set; }
     public int MaxOpenPositions { get; set; } = 1;
     public decimal MaxPlanExposurePercent { get; set; } = 20;
     /// <summary>Paper simulation assumptions in basis points, not broker fee quotations.</summary>

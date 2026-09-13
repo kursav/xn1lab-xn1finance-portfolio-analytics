@@ -374,6 +374,19 @@ public partial class TrackingPlansPage
     private static string ModeLabel(TrackingExecutionMode? mode) => mode switch { TrackingExecutionMode.Paper => "Sanal işlem", TrackingExecutionMode.Live => "Gerçek işlem (desteklenmiyor)", TrackingExecutionMode.Observe => "Yalnızca izle", _ => "—" };
     private static string ActionLabel(FinanceDecisionAction action) => action switch { FinanceDecisionAction.Buy => "Al", FinanceDecisionAction.Sell => "Sat", _ => "Bekle" };
     private static string EvaluationKindLabel(FinanceEvaluationKind kind) => kind switch { FinanceEvaluationKind.Decision => "Karar", FinanceEvaluationKind.Protection => "Koruma", _ => "Veri eksik" };
+    private static string ExecutionReasonLabel(string reason) => reason switch
+    {
+        "paper_trailing_stop" => "İz süren stop",
+        "paper_max_holding_time" => "Süre doldu",
+        "paper_stop_loss" => "Zarar durdur",
+        "paper_take_profit" => "Kâr al",
+        "paper_buy_filled" => "Sanal alış tamamlandı",
+        "paper_sell_filled" => "Sanal satış tamamlandı",
+        "protection_not_triggered" => "Koruma koşulu oluşmadı",
+        "position_already_open" => "Pozisyon zaten açık",
+        "signal_cooldown" => "İşlem bekleme süresi",
+        _ => reason
+    };
     private static string TimeframeLabel(TrackingTimeframe timeframe) => timeframe switch { TrackingTimeframe.Minute5 => "5 dakika", TrackingTimeframe.Minute15 => "15 dakika", TrackingTimeframe.Minute30 => "30 dakika", TrackingTimeframe.Hour1 => "1 saat", TrackingTimeframe.Hour2 => "2 saat", TrackingTimeframe.Hour4 => "4 saat", TrackingTimeframe.Day1 => "1 gün", TrackingTimeframe.Week1 => "1 hafta", _ => timeframe.ToString() };
     private static string Number(decimal? value) => value?.ToString("N2", Turkish) ?? "—";
     private static string Price(decimal? value) => value?.ToString("#,##0.########", Turkish) ?? "—";

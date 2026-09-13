@@ -107,6 +107,12 @@ public sealed class FinancePaperPosition
     public decimal EntryPrice { get; set; }
     public decimal? StopLossPrice { get; set; }
     public decimal? TakeProfitPrice { get; set; }
+    public DateTime? OpenedAtUtc { get; set; }
+    public DateTime? ExitDeadlineUtc { get; set; }
+    public decimal? HighWaterPrice { get; set; }
+    public decimal? TrailingStopActivationPrice { get; set; }
+    public decimal? TrailingStopPrice { get; set; }
+    public DateTime? LastMarkAsOfUtc { get; set; }
     public decimal LastMarkPrice { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
 }
