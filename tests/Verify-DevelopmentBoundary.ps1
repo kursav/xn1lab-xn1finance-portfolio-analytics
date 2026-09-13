@@ -7,7 +7,8 @@ $dockerfilePath = Join-Path $root 'Dockerfile.development'
 $nginxPath = Join-Path $root 'nginx/development.conf'
 $platformPinPath = Join-Path $root '.github/platform-revision.txt'
 $configPath = Join-Path $root 'config/development/runtime-config.template.json'
-foreach ($path in @($workflowPath, $dockerfilePath, $nginxPath, $platformPinPath, $configPath)) {
+$entrypointPath = Join-Path $root 'src/XN1Lab.XN1Finance.PortfolioAnalytics.Web/wwwroot/index.html'
+foreach ($path in @($workflowPath, $dockerfilePath, $nginxPath, $platformPinPath, $configPath, $entrypointPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Missing development boundary file: $path"
     }
@@ -19,6 +20,13 @@ $nginx = Get-Content -Raw -LiteralPath $nginxPath
 $platformPin = (Get-Content -Raw -LiteralPath $platformPinPath).Trim()
 $configText = Get-Content -Raw -LiteralPath $configPath
 $config = $configText | ConvertFrom-Json
+$entrypoint = [regex]::Replace((Get-Content -Raw -LiteralPath $entrypointPath), '(?s)<!--.*?-->', '')
+
+# The standalone WASM host must load the generated scoped styles independently of the fixture host.
+$scopedStylesheetLink = '<link\b(?=[^>]*\brel\s*=\s*["'']stylesheet["''])(?=[^>]*\bhref\s*=\s*["'']XN1Lab\.XN1Finance\.PortfolioAnalytics\.Web\.styles\.css["''])[^>]*>'
+if (-not [regex]::IsMatch($entrypoint, $scopedStylesheetLink, [Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+    throw 'Finance standalone entrypoint must load its generated scoped stylesheet bundle.'
+}
 
 if ($platformPin -notmatch '^[0-9a-f]{40}$') {
     throw 'Platform revision must be a full immutable SHA.'
