@@ -32,6 +32,7 @@ public partial class TrackingPlansPage
     private TrackingPlanDefinition? Definition => Selected?.CurrentVersion?.Definition;
     private Guid EditorKey = Guid.NewGuid();
     private bool EditorOpen;
+    private bool ShowResults;
     private bool ListLoading;
     private bool ListHasLoaded;
     private bool DetailLoading;

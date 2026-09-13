@@ -18,6 +18,7 @@ public sealed class FinanceTrackingClientTests
 
     [Theory]
     [InlineData("capabilities", "GET", "capabilities", "{}")]
+    [InlineData("strategy-results", "GET", "strategy-results", "{\"generatedAtUtc\":\"2026-09-13T12:00:00Z\",\"fromUtc\":\"2026-09-06T12:00:00Z\",\"toUtc\":\"2026-09-13T12:00:00Z\",\"plans\":[]}")]
     [InlineData("indicators", "GET", "indicators", "[]")]
     [InlineData("providers", "GET", "providers", "[]")]
     [InlineData("validate", "POST", "validate", "{\"errors\":[],\"activationBlockers\":[]}")]
@@ -55,6 +56,70 @@ public sealed class FinanceTrackingClientTests
         Assert.Null(api.OwnerAccountId);
         Assert.Equal(cancellation.Token, api.CancellationToken);
         Assert.Equal(1, api.Calls);
+    }
+
+    [Fact]
+    public async Task Strategy_results_use_UTC_period_and_indexed_plan_selection_with_no_account_override()
+    {
+        var api = new RecordingApiClient { Response = new(HttpStatusCode.OK,
+            """{"generatedAtUtc":"2026-09-13T12:00:00Z","fromUtc":"2026-09-06T12:00:00Z","toUtc":"2026-09-13T12:00:00Z","plans":[]}""") };
+        var from = new DateTime(2026, 9, 6, 12, 0, 0, DateTimeKind.Utc);
+        var to = from.AddDays(7);
+        using var cancellation = new CancellationTokenSource();
+        var results = await new ApiFinanceTrackingService(api).GetStrategyResultsAsync(from, to, [PlanId, NotificationId], cancellation.Token);
+
+        Assert.Equal($"{Root}/strategy-results", api.Path);
+        Assert.Equal(HttpMethod.Get, api.Method);
+        Assert.Equal("2026-09-06T12:00:00.0000000Z", api.Query!["fromUtc"]);
+        Assert.Equal("2026-09-13T12:00:00.0000000Z", api.Query["toUtc"]);
+        Assert.Equal(PlanId.ToString("D"), api.Query["planIds[0]"]);
+        Assert.Equal(NotificationId.ToString("D"), api.Query["planIds[1]"]);
+        Assert.Null(api.OwnerAccountId);
+        Assert.Equal(cancellation.Token, api.CancellationToken);
+        Assert.Equal(from, results.FromUtc);
+        Assert.Equal(to, results.ToUtc);
+        Assert.Empty(results.Plans);
+    }
+
+    [Fact]
+    public async Task Strategy_results_keep_independent_version_rows_and_server_aggregates()
+    {
+        var api = new RecordingApiClient { Response = new(HttpStatusCode.OK,
+            """{"generatedAtUtc":"2026-09-13T12:00:00Z","fromUtc":"2026-09-06T12:00:00Z","toUtc":"2026-09-13T12:00:00Z","plans":[{"planId":"11111111-1111-1111-1111-111111111111","versionNumber":1,"mode":"Paper","direction":[{"horizonMinutes":5,"eligible":10,"measured":8,"successes":5,"neutral":1,"pending":1,"missing":1,"successRatePercent":62.5}],"paper":{"closedEpisodeCount":4,"wins":1,"netPnl":-3.75,"winRatePercent":25},"indicatorDefinitions":[{"bindingKey":"rsi5","indicatorCode":"RSI","timeframe":"Minute5","parameters":{"period":14}}]},{"planId":"11111111-1111-1111-1111-111111111111","versionNumber":2,"mode":"Paper"}]}""") };
+        var result = await new ApiFinanceTrackingService(api).GetStrategyResultsAsync();
+        Assert.Equal(2, result.Plans.Count);
+        Assert.Equal(result.Plans[0].PlanId, result.Plans[1].PlanId);
+        Assert.Equal(1, result.Plans[0].VersionNumber);
+        Assert.Equal(2, result.Plans[1].VersionNumber);
+        var measured = Assert.Single(result.Plans[0].Direction);
+        Assert.Equal(8, measured.Measured);
+        Assert.Equal(62.5m, measured.SuccessRatePercent);
+        Assert.Equal(4, result.Plans[0].Paper.ClosedEpisodeCount);
+        Assert.Equal(-3.75m, result.Plans[0].Paper.NetPnl);
+        Assert.Null(result.Plans[1].Paper.WinRatePercent);
+        Assert.Equal(14, Assert.Single(result.Plans[0].IndicatorDefinitions).Parameters["period"]);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"generatedAtUtc\":\"2026-09-13T12:00:00Z\",\"fromUtc\":\"2026-09-06T12:00:00Z\",\"toUtc\":\"2026-09-13T12:00:00Z\",\"plans\":null}")]
+    public async Task Incomplete_strategy_response_is_not_a_successful_empty_result(string json)
+    {
+        var api = new RecordingApiClient { Response = new(HttpStatusCode.OK, json) };
+        await Assert.ThrowsAsync<FinanceTrackingApiContractException>(() => new ApiFinanceTrackingService(api).GetStrategyResultsAsync());
+    }
+
+    [Fact]
+    public async Task Invalid_strategy_period_or_selection_fails_before_HTTP()
+    {
+        var api = new RecordingApiClient();
+        var service = new ApiFinanceTrackingService(api);
+        var from = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => service.GetStrategyResultsAsync(from, from));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => service.GetStrategyResultsAsync(from, from.AddDays(32)));
+        await Assert.ThrowsAsync<ArgumentException>(() => service.GetStrategyResultsAsync(planIds: [Guid.Empty]));
+        await Assert.ThrowsAsync<ArgumentException>(() => service.GetStrategyResultsAsync(planIds: Enumerable.Range(0, 21).Select(_ => Guid.NewGuid()).ToArray()));
+        Assert.Equal(0, api.Calls);
     }
 
     [Fact]
@@ -292,6 +357,7 @@ public sealed class FinanceTrackingClientTests
         switch (operation)
         {
             case "capabilities": await service.GetCapabilitiesAsync(cancellationToken); break;
+            case "strategy-results": await service.GetStrategyResultsAsync(cancellationToken: cancellationToken); break;
             case "indicators": await service.GetIndicatorsAsync(cancellationToken); break;
             case "providers": await service.GetProvidersAsync(cancellationToken); break;
             case "validate": await service.ValidateAsync(new(), cancellationToken); break;

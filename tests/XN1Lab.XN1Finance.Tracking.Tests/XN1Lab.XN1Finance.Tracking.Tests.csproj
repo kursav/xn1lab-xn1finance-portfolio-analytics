@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/XN1Lab.XN1Finance.PortfolioAnalytics.Web/XN1Lab.XN1Finance.PortfolioAnalytics.Web.csproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Include="../XN1Lab.XN1Finance.Tracking.Preview/PreviewPort.cs" Link="Preview/PreviewPort.cs" />
   </ItemGroup>
 
   <ItemGroup>

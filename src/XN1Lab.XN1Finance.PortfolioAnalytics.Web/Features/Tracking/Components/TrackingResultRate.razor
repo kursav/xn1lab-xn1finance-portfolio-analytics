@@ -1,0 +1,28 @@
+@using System.Globalization
+
+<div class="result-rate">
+    <strong>@(Measured > 0 && Rate.HasValue ? $"%{Rate.Value.ToString("0.#", Turkish)}" : "—")</strong>
+    <small>@Favourable / @Measured ölçüm</small>
+    @if (Pending > 0 || Missing > 0 || NoReference > 0)
+    {
+        <small>@Pending bekliyor · @Missing eksik</small>
+        @if (NoReference > 0) { <small>@NoReference referans yok</small> }
+    }
+    @if (Eligible > 0) { <small>Kapsam: @Measured / @Eligible</small> }
+    @if (Measured > 0 && Measured < MinimumSampleSize)
+    {
+        <small class="result-sample">Az örnek</small>
+    }
+</div>
+
+@code {
+    private static readonly CultureInfo Turkish = CultureInfo.GetCultureInfo("tr-TR");
+    [Parameter] public long Favourable { get; set; }
+    [Parameter] public long Measured { get; set; }
+    [Parameter] public long Pending { get; set; }
+    [Parameter] public long Missing { get; set; }
+    [Parameter] public long NoReference { get; set; }
+    [Parameter] public long Eligible { get; set; }
+    [Parameter] public decimal? Rate { get; set; }
+    [Parameter] public int MinimumSampleSize { get; set; }
+}

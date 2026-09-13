@@ -41,7 +41,17 @@
                 {
                     <div class="ui negative message" role="alert">@PageError <button type="button" class="ui mini basic button" disabled="@ListLoading" @onclick="ReloadWorkspaceAsync">Yeniden dene</button></div>
                 }
-                <div class="tracking-grid">
+                <nav class="tracking-tabs tracking-workspace-tabs" role="tablist" aria-label="Takip görünümü">
+                    <button type="button" role="tab" class="@(!ShowResults ? "active" : "")" aria-selected="@(!ShowResults)" aria-controls="tracking-plans-view" disabled="@(Busy || EditorOpen)" @onclick="() => ShowResults = false">Planlar</button>
+                    <button type="button" role="tab" class="@(ShowResults ? "active" : "")" aria-selected="@ShowResults" aria-controls="tracking-results-view" disabled="@(Busy || EditorOpen)" data-testid="tracking-results" @onclick="() => ShowResults = true">Sonuçlar</button>
+                </nav>
+                @if (ShowResults)
+                {
+                    <div id="tracking-results-view" role="tabpanel"><TrackingStrategyResults /></div>
+                }
+                else
+                {
+                <div id="tracking-plans-view" class="tracking-grid" role="tabpanel">
                     <aside class="tracking-plans-panel">
                         <div class="tracking-panel-heading"><div><h2>Planların</h2><span class="tracking-muted">@(ListHasLoaded ? $"{PlanPage.TotalItems} kayıt" : "Veri bekleniyor")</span></div><button type="button" class="ui small primary button" disabled="@(!Permissions.CanWrite || Busy || EditorOpen)" data-testid="tracking-create" @onclick="CreatePlan"><i class="plus icon" aria-hidden="true"></i> Yeni plan</button></div>
                         <form class="tracking-search ui form" @onsubmit="SearchAsync" @onsubmit:preventDefault>
@@ -208,6 +218,7 @@
                         }
                     </main>
                 </div>
+                }
             </div>
         }
     </WorkspacePageContent>

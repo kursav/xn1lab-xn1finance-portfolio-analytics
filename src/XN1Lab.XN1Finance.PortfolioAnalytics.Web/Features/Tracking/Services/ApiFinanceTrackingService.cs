@@ -16,6 +16,27 @@ public sealed class ApiFinanceTrackingService(IPlatformApiClient apiClient) : IF
     public Task<TrackingCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default) =>
         SendRequiredAsync<TrackingCapabilities>(HttpMethod.Get, $"{BasePath}/capabilities", cancellationToken);
 
+    public async Task<FinanceStrategyResults> GetStrategyResultsAsync(DateTime? fromUtc = null, DateTime? toUtc = null,
+        IReadOnlyList<Guid>? planIds = null, CancellationToken cancellationToken = default)
+    {
+        if (fromUtc.HasValue && toUtc.HasValue && (toUtc <= fromUtc || toUtc.Value - fromUtc.Value > TimeSpan.FromDays(31)))
+            throw new ArgumentOutOfRangeException(nameof(toUtc));
+        if (planIds?.Count > 20 || planIds?.Any(id => id == Guid.Empty) == true)
+            throw new ArgumentException("Select up to 20 existing plans.", nameof(planIds));
+        var query = new Dictionary<string, string?>
+        {
+            ["fromUtc"] = fromUtc?.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+            ["toUtc"] = toUtc?.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)
+        };
+        for (var index = 0; index < (planIds?.Count ?? 0); index++)
+            query[$"planIds[{index}]"] = planIds![index].ToString("D");
+        var path = $"{BasePath}/strategy-results";
+        var result = await SendRequiredAsync<FinanceStrategyResults>(HttpMethod.Get, path, cancellationToken, query);
+        if (result.GeneratedAtUtc == default || result.FromUtc == default || result.ToUtc <= result.FromUtc || result.Plans is null)
+            throw new FinanceTrackingApiContractException(path);
+        return result;
+    }
+
     public async Task<IReadOnlyList<IndicatorDefinition>> GetIndicatorsAsync(CancellationToken cancellationToken = default) =>
         await SendRequiredAsync<List<IndicatorDefinition>>(HttpMethod.Get, $"{BasePath}/indicators", cancellationToken);
 
