@@ -3,6 +3,7 @@ using System.Text.Json;
 using XN1Lab.Platform.Api.Abstractions;
 using XN1Lab.Platform.Api.Exceptions;
 using XN1Lab.Platform.Api.Models;
+using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Components;
 using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Models;
 using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Services;
 using Xunit;
@@ -236,6 +237,42 @@ public sealed class FinanceTrackingClientTests
         Assert.Contains("\"mode\":\"Paper\"", encoded);
         Assert.Null(decoded.ExpectedRevision);
         Assert.DoesNotContain("ownerAccountId", encoded);
+    }
+
+    [Fact]
+    public async Task Paper_protection_configuration_survives_API_load_clone_and_save()
+    {
+        var api = new RecordingApiClient { Response = new(HttpStatusCode.OK,
+            """{"currentVersion":{"definition":{"execution":{"mode":"Paper","maxHoldingMinutes":30,"trailingStopPercent":0.25,"trailingStopActivationPercent":0.6}}}}""") };
+        var service = new ApiFinanceTrackingService(api);
+        var plan = await service.GetPlanAsync(PlanId);
+        var request = new SaveTrackingPlanRequest
+        {
+            Name = "Kısa döngü", ExpectedRevision = 2,
+            Definition = TrackingEditorRules.Clone(plan.CurrentVersion!.Definition)
+        };
+        api.Response = new(HttpStatusCode.OK, "{}");
+        await service.UpdatePlanAsync(PlanId, request);
+        using var encoded = JsonDocument.Parse(JsonSerializer.Serialize(api.Body, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        var execution = encoded.RootElement.GetProperty("definition").GetProperty("execution");
+        Assert.Equal(30, execution.GetProperty("maxHoldingMinutes").GetInt32());
+        Assert.Equal(0.25m, execution.GetProperty("trailingStopPercent").GetDecimal());
+        Assert.Equal(0.6m, execution.GetProperty("trailingStopActivationPercent").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Paper_position_retains_trailing_stop_and_deadline_from_server()
+    {
+        var api = new RecordingApiClient { Response = new(HttpStatusCode.OK,
+            """{"positions":[{"openedAtUtc":"2026-09-13T10:00:00Z","exitDeadlineUtc":"2026-09-13T10:30:00Z","highWaterPrice":101.25,"trailingStopActivationPrice":100.6,"trailingStopPrice":100.996875,"lastMarkAsOfUtc":"2026-09-13T10:05:00Z"}]}""") };
+        var paper = await new ApiFinanceTrackingService(api).GetPaperAsync(PlanId);
+        var position = Assert.Single(paper.Positions);
+        Assert.Equal(DateTime.Parse("2026-09-13T10:00:00Z").ToUniversalTime(), position.OpenedAtUtc);
+        Assert.Equal(DateTime.Parse("2026-09-13T10:30:00Z").ToUniversalTime(), position.ExitDeadlineUtc);
+        Assert.Equal(101.25m, position.HighWaterPrice);
+        Assert.Equal(100.6m, position.TrailingStopActivationPrice);
+        Assert.Equal(100.996875m, position.TrailingStopPrice);
+        Assert.Equal(DateTime.Parse("2026-09-13T10:05:00Z").ToUniversalTime(), position.LastMarkAsOfUtc);
     }
 
     [Fact]

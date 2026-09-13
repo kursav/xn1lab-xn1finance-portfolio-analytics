@@ -8,6 +8,77 @@ using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Models;
 namespace XN1Lab.XN1Finance.Tracking.Tests;
 public sealed class TrackingPlanEditorTests
 {
+ [Fact]
+ public void Paper_protection_settings_are_loaded_edited_and_saved_without_changing_original_before_save()
+ {
+  using var ctx = new TrackingTestContext();
+  var original = ctx.Api.Plan.CurrentVersion!.Definition.Execution;
+  original.MaxHoldingMinutes = 30;
+  original.TrailingStopPercent = 0.25m;
+  original.TrailingStopActivationPercent = 0.6m;
+  var cut = ctx.Render<TrackingPlanEditor>(p => p.Add(x => x.Plan, ctx.Api.Plan));
+  cut.WaitForAssertion(() => Assert.Equal("30", cut.Find("input[name=maxHoldingMinutes]").GetAttribute("value")));
+  Assert.Equal("0.25", cut.Find("input[name=trailingStopPercent]").GetAttribute("value"));
+  Assert.Equal("0.6", cut.Find("input[name=trailingStopActivationPercent]").GetAttribute("value"));
+
+  cut.Find("input[name=maxHoldingMinutes]").Change("45");
+  cut.Find("input[name=trailingStopPercent]").Change("0.35");
+  cut.Find("input[name=trailingStopActivationPercent]").Change("0.75");
+  Assert.Equal(30, original.MaxHoldingMinutes);
+  Assert.Equal(0.25m, original.TrailingStopPercent);
+  Assert.Equal(0.6m, original.TrailingStopActivationPercent);
+  cut.Find("form").Submit();
+
+  cut.WaitForAssertion(() => Assert.NotNull(ctx.Api.SavedRequest));
+  var saved = ctx.Api.SavedRequest!.Definition.Execution;
+  Assert.Equal(45, saved.MaxHoldingMinutes);
+  Assert.Equal(0.35m, saved.TrailingStopPercent);
+  Assert.Equal(0.75m, saved.TrailingStopActivationPercent);
+  Assert.Contains("validate", ctx.Api.Calls);
+  Assert.Empty(ctx.Api.StatusRequests);
+ }
+
+ [Fact]
+ public void Clearing_optional_protection_fields_saves_null_instead_of_zero_or_previous_values()
+ {
+  using var ctx = new TrackingTestContext();
+  var execution = ctx.Api.Plan.CurrentVersion!.Definition.Execution;
+  execution.MaxHoldingMinutes = 30;
+  execution.TrailingStopPercent = 0.25m;
+  execution.TrailingStopActivationPercent = 0.6m;
+  var cut = ctx.Render<TrackingPlanEditor>(p => p.Add(x => x.Plan, ctx.Api.Plan));
+  cut.WaitForAssertion(() => Assert.NotEmpty(cut.FindAll("form")));
+  foreach (var name in new[] { "maxHoldingMinutes", "trailingStopPercent", "trailingStopActivationPercent" })
+   cut.Find($"input[name={name}]").Change("");
+  cut.Find("form").Submit();
+
+  cut.WaitForAssertion(() => Assert.NotNull(ctx.Api.SavedRequest));
+  var saved = ctx.Api.SavedRequest!.Definition.Execution;
+  Assert.Null(saved.MaxHoldingMinutes);
+  Assert.Null(saved.TrailingStopPercent);
+  Assert.Null(saved.TrailingStopActivationPercent);
+  Assert.Contains("validate", ctx.Api.Calls);
+  Assert.Empty(ctx.Api.StatusRequests);
+ }
+
+ [Theory]
+ [InlineData("")]
+ [InlineData("0")]
+ public void Immediate_trailing_activation_remains_optional_while_a_trailing_stop_is_configured(string activation)
+ {
+  using var ctx = new TrackingTestContext();
+  var cut = ctx.Render<TrackingPlanEditor>(p => p.Add(x => x.Plan, ctx.Api.Plan));
+  cut.WaitForAssertion(() => Assert.NotEmpty(cut.FindAll("form")));
+  cut.Find("input[name=trailingStopPercent]").Change("0.25");
+  cut.Find("input[name=trailingStopActivationPercent]").Change(activation);
+  cut.Find("form").Submit();
+
+  cut.WaitForAssertion(() => Assert.NotNull(ctx.Api.SavedRequest));
+  var saved = ctx.Api.SavedRequest!.Definition.Execution;
+  Assert.Equal(0.25m, saved.TrailingStopPercent);
+  Assert.Equal(activation.Length == 0 ? (decimal?)null : 0m, saved.TrailingStopActivationPercent);
+ }
+
  [Fact] public void Editing_clones_definition_and_does_not_mutate_loaded_plan(){using var ctx=new TrackingTestContext();var cut=ctx.Render<TrackingPlanEditor>(p=>p.Add(x=>x.Plan,ctx.Api.Plan));cut.WaitForAssertion(()=>Assert.NotEmpty(cut.FindAll("form")));var original=ctx.Api.Plan.CurrentVersion!.Definition.Indicators[0].Parameters["period"];var period=cut.FindAll("input[type=number]").First(x=>x.GetAttribute("value")=="14");period.Change("21");Assert.Equal(original,ctx.Api.Plan.CurrentVersion.Definition.Indicators[0].Parameters["period"]);Assert.Null(ctx.Api.SavedRequest);}
  [Fact] public void Save_revalidates_and_sends_pinned_revision_without_activation(){using var ctx=new TrackingTestContext();var cut=ctx.Render<TrackingPlanEditor>(p=>p.Add(x=>x.Plan,ctx.Api.Plan));cut.WaitForAssertion(()=>Assert.NotEmpty(cut.FindAll("form")));cut.Find("input[maxlength='200']").Change("Yeni strateji");ctx.Api.Plan.Revision=99;cut.Find("form").Submit();cut.WaitForAssertion(()=>Assert.NotNull(ctx.Api.SavedRequest));Assert.Equal("Yeni strateji",ctx.Api.SavedRequest!.Name);Assert.Equal(7,ctx.Api.SavedRequest.ExpectedRevision);Assert.Contains("validate",ctx.Api.Calls);Assert.Empty(ctx.Api.StatusRequests);}
  [Fact] public void Invalid_definition_never_reaches_create_or_update(){using var ctx=new TrackingTestContext();ctx.Api.Invalid=true;var cut=ctx.Render<TrackingPlanEditor>(p=>p.Add(x=>x.Plan,ctx.Api.Plan));cut.WaitForAssertion(()=>Assert.NotEmpty(cut.FindAll("form")));cut.Find("form").Submit();cut.WaitForAssertion(()=>Assert.Contains("weight_total",cut.Markup));Assert.Null(ctx.Api.SavedRequest);}

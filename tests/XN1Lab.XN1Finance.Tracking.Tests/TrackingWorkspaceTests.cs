@@ -1,11 +1,39 @@
 using Bunit;
 using AngleSharp.Dom;
+using Microsoft.Extensions.DependencyInjection;
+using XN1Lab.Platform.Shared.Pagination;
 using XN1Lab.XN1Finance.Tracking.Tests.Fixtures;
 using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Pages;
 using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Models;
+using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Services;
 namespace XN1Lab.XN1Finance.Tracking.Tests;
 public sealed class TrackingWorkspaceTests
 {
+ [Theory]
+ [InlineData("paper_trailing_stop", "İz süren stop")]
+ [InlineData("paper_max_holding_time", "Süre doldu")]
+ [InlineData("provider_unknown_reason", "provider_unknown_reason")]
+ public void Evaluation_status_translates_protection_exits_and_preserves_unknown_reasons(string reason, string expected)
+ {
+  using var ctx = new TrackingTestContext();
+  ctx.Services.AddSingleton<IFinanceTrackingService>(new EvaluationReasonFixture(reason));
+  var cut = ctx.Render<TrackingPlansPage>();
+  Select(cut);
+  Button(cut, "Hesaplama geçmişi").Click();
+  cut.WaitForAssertion(() => Assert.Contains(cut.FindAll("tbody td"), cell => cell.TextContent == expected));
+ }
+
+ private sealed class EvaluationReasonFixture(string reason) : TrackingFixtureService
+ {
+  public override Task<PaginatedList<FinanceEvaluation>> GetEvaluationsAsync(Guid planId, int pageNumber = 1, int pageSize = 50, CancellationToken cancellationToken = default)
+   => Task.FromResult(Page(new[] { new FinanceEvaluation
+   {
+    Id = Guid.NewGuid(), PlanId = planId, InstrumentId = InstrumentId,
+    Kind = FinanceEvaluationKind.Protection, ExecutionReason = reason,
+    Decision = new() { IsAvailable = true, Action = FinanceDecisionAction.Sell }
+   } }, pageNumber));
+ }
+
  static IElement Button(IRenderedComponent<TrackingPlansPage> cut,string text)=>Assert.Single(cut.FindAll("button"),button=>button.TextContent.Trim().Contains(text,StringComparison.Ordinal));
  static void Select(IRenderedComponent<TrackingPlansPage> cut){cut.WaitForAssertion(()=>Assert.Single(cut.FindAll(".tracking-plan-card")));cut.Find(".tracking-plan-card").Click();cut.WaitForAssertion(()=>Assert.Single(cut.FindAll("[data-testid='tracking-edit']")));}
  [Fact] public void Read_permission_is_required_before_any_api_call(){using var ctx=new TrackingTestContext();ctx.Access.Read=false;var cut=ctx.Render<TrackingPlansPage>();Assert.Contains("okuma yetkisi",cut.Markup);Assert.Empty(ctx.Api.Calls);}
