@@ -1,0 +1,16 @@
+.filter-comparison { margin:0 0 1.5rem; font-size:.78rem; }
+.filter-toolbar { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
+.filter-toolbar h3 { font-size:.9rem; margin:.4rem 0; }
+.filter-toolbar select { border:1px solid #dce3eb; border-radius:5px; padding:.45rem; font-size:.78rem; background:#fff; color:#182638; }
+.filter-source,.filter-caption,.filter-population,.filter-gaps,.filter-empty { margin:.4rem 0; line-height:1.5; }
+.filter-source,.filter-caption,.filter-empty { color:#69768a; }
+.filter-source { font-size:.72rem; }
+.filter-gaps { color:#946e32; }
+.filter-table-scroll { overflow-x:auto; }
+.filter-table { font-size:.77rem; font-variant-numeric:tabular-nums; }
+.filter-table thead th { color:#69768a; font-weight:500; white-space:nowrap; font-size:.72rem; }
+.filter-table tbody th { font-weight:500; white-space:nowrap; }
+.filter-table td,.filter-table tbody th { vertical-align:top; padding:.6rem .5rem; }
+.filter-table small { display:block; color:#69768a; font-size:.7rem; margin-top:.3rem; font-weight:400; }
+.filter-data { min-width:220px; }
+.filter-toolbar select:focus-visible { outline:2px solid #3185b5; outline-offset:3px; }
