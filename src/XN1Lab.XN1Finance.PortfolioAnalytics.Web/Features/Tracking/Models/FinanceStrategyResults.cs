@@ -28,6 +28,7 @@ public sealed class FinanceStrategyResult
     public FinancePaperPerformance Paper { get; set; } = new();
     public List<FinanceIndicatorPerformance> Indicators { get; set; } = [];
     public List<TrackingIndicator> IndicatorDefinitions { get; set; } = [];
+    public FinanceRsiFilterComparison? RsiFilterComparison { get; set; }
 }
 
 /// <summary>Success means strictly positive action-aligned gross change. Neutral is measured but not a success.</summary>

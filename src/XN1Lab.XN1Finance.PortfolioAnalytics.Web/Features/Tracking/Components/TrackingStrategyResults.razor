@@ -54,13 +54,17 @@
                     @if (ExpandedVersionId == plan.PlanVersionId)
                     {
                         <tr class="results-detail-row"><td colspan="8"><div class="results-detail" id="@($"result-detail-{plan.PlanVersionId:N}")">
+                            @if (plan.RsiFilterComparison is not null)
+                            {
+                                <TrackingRsiFilterComparison @key="plan.PlanVersionId" Plan="plan" />
+                            }
                             <h3>İndikatörler</h3>
                             <div class="results-indicators">@foreach (var indicator in plan.IndicatorDefinitions) { <span><strong>@Indicator(indicator)</strong> · @TrackingEditorRules.Timeframe(indicator.Timeframe)<small>@indicator.BindingKey</small></span> }</div>
-                            @if (plan.Indicators.Count == 0)
+                            @if (plan.RsiFilterComparison is null && plan.Indicators.Count == 0)
                             {
                                 <p class="results-muted">Bu sürüm için koşul sonucu yok.</p>
                             }
-                            else
+                            else if (plan.RsiFilterComparison is null)
                             {
                                 <p class="results-muted results-condition-caption">Koşul sağlandığındaki sonuçlar; tek başına indikatör etkisi değildir.</p>
                                 <table class="ui very basic compact table results-conditions"><thead><tr><th scope="col">Koşul / bağlantı</th><th scope="col">Ağırlık</th><th scope="col">Eşleşen karar</th>@foreach (var horizon in Horizons) { <th scope="col">Yön · @horizon dk</th> }</tr></thead>

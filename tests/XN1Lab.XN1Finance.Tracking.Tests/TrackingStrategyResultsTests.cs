@@ -57,7 +57,7 @@ public sealed class TrackingStrategyResultsTests
     }
 
     [Fact]
-    public void Expanded_details_use_versioned_indicator_settings_and_conditional_measurements()
+    public void Expanded_paired_details_keep_versioned_indicators_and_actual_exits_without_duplicate_condition_results()
     {
         using var ctx = new TrackingTestContext();
         var cut = ctx.Render<TrackingStrategyResults>();
@@ -65,13 +65,32 @@ public sealed class TrackingStrategyResultsTests
         cut.FindAll("tr[data-plan-version] button")[0].Click();
         var detail = cut.Find(".results-detail");
         Assert.Contains("RSI (14)", detail.TextContent);
-        Assert.Contains("EMA (9)", detail.TextContent);
+        Assert.Equal(3, cut.FindAll(".results-indicators > span").Count);
+        Assert.All(cut.FindAll(".results-indicators > span"), indicator => Assert.Contains("RSI (14)", indicator.TextContent));
+        Assert.DoesNotContain("EMA", detail.TextContent);
         Assert.Contains("5 dakika", detail.TextContent);
+        Assert.Contains("1 saat", detail.TextContent);
+        Assert.Contains("2 saat", detail.TextContent);
+        Assert.Contains("Filtre katkısı", detail.TextContent);
+        Assert.Empty(cut.FindAll(".results-conditions"));
+        Assert.DoesNotContain("tek başına indikatör etkisi değildir", detail.TextContent);
+        Assert.Contains("Süre doldu", detail.TextContent);
+        Assert.Contains("İz süren stop", detail.TextContent);
+    }
+
+    [Fact]
+    public void Legacy_plan_details_keep_conditional_measurements_when_paired_report_is_absent()
+    {
+        using var ctx = new TrackingTestContext();
+        ctx.Services.AddSingleton<IFinanceTrackingService>(new RecordingResultsService { WithoutFilterComparison = true });
+        var cut = ctx.Render<TrackingStrategyResults>();
+        cut.FindAll("tr[data-plan-version] button")[0].Click();
+        var detail = cut.Find(".results-detail");
         Assert.Contains("4 / 6 ölçüm", detail.TextContent);
         Assert.Contains("%66,7", detail.TextContent);
         Assert.Contains("tek başına indikatör etkisi değildir", detail.TextContent);
-        Assert.Contains("Süre doldu", detail.TextContent);
-        Assert.Contains("İz süren stop", detail.TextContent);
+        Assert.Single(cut.FindAll(".results-conditions"));
+        Assert.Empty(cut.FindAll(".filter-comparison"));
     }
 
     [Fact]
@@ -110,12 +129,15 @@ public sealed class TrackingStrategyResultsTests
         public List<TimeSpan> Periods { get; } = [];
         public List<DateTime?> ToUtcValues { get; } = [];
         public bool Fail { get; set; }
-        public override Task<FinanceStrategyResults> GetStrategyResultsAsync(DateTime? fromUtc = null, DateTime? toUtc = null, IReadOnlyList<Guid>? planIds = null, CancellationToken cancellationToken = default)
+        public bool WithoutFilterComparison { get; set; }
+        public override async Task<FinanceStrategyResults> GetStrategyResultsAsync(DateTime? fromUtc = null, DateTime? toUtc = null, IReadOnlyList<Guid>? planIds = null, CancellationToken cancellationToken = default)
         {
-            if (Fail) return Task.FromException<FinanceStrategyResults>(new PlatformApiException(HttpStatusCode.ServiceUnavailable, ""));
+            if (Fail) throw new PlatformApiException(HttpStatusCode.ServiceUnavailable, "");
             Periods.Add(DateTime.UtcNow - fromUtc!.Value);
             ToUtcValues.Add(toUtc);
-            return base.GetStrategyResultsAsync(fromUtc, toUtc, planIds, cancellationToken);
+            var results = await base.GetStrategyResultsAsync(fromUtc, toUtc, planIds, cancellationToken);
+            if (WithoutFilterComparison) foreach (var plan in results.Plans) plan.RsiFilterComparison = null;
+            return results;
         }
     }
 }

@@ -98,6 +98,41 @@ public sealed class FinanceTrackingClientTests
         Assert.Equal(-3.75m, result.Plans[0].Paper.NetPnl);
         Assert.Null(result.Plans[1].Paper.WinRatePercent);
         Assert.Equal(14, Assert.Single(result.Plans[0].IndicatorDefinitions).Parameters["period"]);
+        Assert.All(result.Plans, plan => Assert.Null(plan.RsiFilterComparison));
+    }
+
+    [Fact]
+    public async Task Strategy_results_read_additive_paired_filter_metrics_without_changing_paper_profit()
+    {
+        var api = new RecordingApiClient { Response = new(HttpStatusCode.OK,
+            """{"generatedAtUtc":"2026-09-14T02:00:00Z","fromUtc":"2026-09-13T02:00:00Z","toUtc":"2026-09-14T02:00:00Z","plans":[{"versionNumber":3,"paper":{"netPnl":-2.5},"rsiFilterComparison":{"recipeVersion":"rsi14-5m-cross50-max65-hour1-hour2-v1","observedThroughUtc":"2026-09-14T01:55:00Z","decisionCount":12,"duplicateDecisionCount":1,"invalidDecisionCount":2,"unknownBaseDecisionCount":3,"baseOpportunityCount":5,"comparableOpportunityCount":4,"excludedOpportunityCount":1,"missingIndicatorDecisionCount":2,"invalidIndicatorDecisionCount":1,"variants":[{"key":"hour1","acceptedOpportunityCount":3,"rejectedOpportunityCount":1,"accepted":[{"horizonMinutes":5,"eligible":3,"measured":2,"positive":1,"negative":1,"neutral":0,"pending":1,"positiveRatePercent":50,"coveragePercent":66.666667,"averagePriceChangePercent":0.1,"liveQuoteCount":1,"recordedDecisionCount":1,"unknownProvenanceCount":0}],"rejected":[{"horizonMinutes":5,"eligible":1,"measured":0,"invalid":1}]}]}},{"versionNumber":4,"rsiFilterComparison":null}]}""") };
+        var results = await new ApiFinanceTrackingService(api).GetStrategyResultsAsync();
+        var comparison = Assert.IsType<FinanceRsiFilterComparison>(results.Plans[0].RsiFilterComparison);
+        Assert.Equal("rsi14-5m-cross50-max65-hour1-hour2-v1", comparison.RecipeVersion);
+        Assert.Equal(new DateTime(2026, 9, 14, 1, 55, 0, DateTimeKind.Utc), comparison.ObservedThroughUtc);
+        Assert.Equal(12, comparison.DecisionCount);
+        Assert.Equal(1, comparison.DuplicateDecisionCount);
+        Assert.Equal(2, comparison.InvalidDecisionCount);
+        Assert.Equal(3, comparison.UnknownBaseDecisionCount);
+        Assert.Equal(5, comparison.BaseOpportunityCount);
+        Assert.Equal(4, comparison.ComparableOpportunityCount);
+        Assert.Equal(1, comparison.ExcludedOpportunityCount);
+        Assert.Equal(2, comparison.MissingIndicatorDecisionCount);
+        Assert.Equal(1, comparison.InvalidIndicatorDecisionCount);
+        var variant = Assert.Single(comparison.Variants);
+        Assert.Equal("hour1", variant.Key);
+        Assert.Equal(3, variant.AcceptedOpportunityCount);
+        Assert.Equal(1, variant.RejectedOpportunityCount);
+        var accepted = Assert.Single(variant.Accepted);
+        Assert.Equal(2, accepted.Measured);
+        Assert.Equal(50m, accepted.PositiveRatePercent);
+        Assert.Equal(66.666667m, accepted.CoveragePercent);
+        Assert.Equal(0.1m, accepted.AveragePriceChangePercent);
+        Assert.Equal(1, accepted.LiveQuoteCount);
+        Assert.Equal(1, accepted.RecordedDecisionCount);
+        Assert.Equal(1, Assert.Single(variant.Rejected).Invalid);
+        Assert.Equal(-2.5m, results.Plans[0].Paper.NetPnl);
+        Assert.Null(results.Plans[1].RsiFilterComparison);
     }
 
     [Theory]

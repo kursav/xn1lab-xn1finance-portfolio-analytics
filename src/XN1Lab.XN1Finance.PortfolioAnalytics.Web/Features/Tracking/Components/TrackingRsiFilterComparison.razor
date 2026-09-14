@@ -1,0 +1,66 @@
+@namespace XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Components
+@using XN1Lab.XN1Finance.PortfolioAnalytics.Web.Features.Tracking.Models
+
+@if (Plan.RsiFilterComparison is { } comparison)
+{
+    <section class="filter-comparison" aria-label="Filtre katkısı" data-source-version="@Plan.PlanVersionId">
+        <header class="filter-toolbar">
+            <h3>Filtre katkısı</h3>
+            <select aria-label="Filtre sonucu süresi" @bind="Horizon">
+                <option value="5">5 dk sonrası</option><option value="15">15 dk sonrası</option><option value="30">30 dk sonrası</option>
+            </select>
+        </header>
+        <p class="filter-source">Kaynak: @Plan.PlanName · v@(Plan.VersionNumber) · @Utc(comparison.ObservedThroughUtc) UTC</p>
+        <p class="filter-caption">5 dk RSI(14): 50 üstüne geçiş, en çok 65. Aynı fırsatlar, Bekle kararları dahil. Brüt fiyat hareketi; sanal işlem kârı değildir.</p>
+        <p class="filter-population">Gözlenen karar: @comparison.DecisionCount · Temel fırsat: @comparison.BaseOpportunityCount · <span title="Üç RSI değeri de geçerli olan temel fırsatlar">Ortak karşılaştırma: @comparison.ComparableOpportunityCount</span></p>
+        @if (PopulationGaps(comparison) is { Length: > 0 } gaps)
+        {
+            <p class="filter-gaps">@gaps</p>
+        }
+        @if (comparison.ComparableOpportunityCount == 0)
+        {
+            <p class="filter-empty">Bu dönemde karşılaştırılabilir temel fırsat yok.</p>
+        }
+        else
+        {
+            <div class="filter-table-scroll">
+                <table class="ui very basic compact table filter-table">
+                    <thead><tr><th scope="col">Filtre</th><th scope="col">Grup</th><th scope="col">Fırsat</th><th scope="col">Ölçüm / kapsam</th><th scope="col">Yükseliş / Düşüş / Yatay</th><th scope="col">Ort. fiyat değişimi</th><th scope="col">Veri durumu / kaynak</th></tr></thead>
+                    <tbody>
+                        @foreach (var key in VariantKeys)
+                        {
+                            var variant = comparison.Variants?.FirstOrDefault(x => x.Key == key);
+                            @if (variant is null)
+                            {
+                                <tr data-filter="@key"><th scope="row">@FilterName(key)</th><td colspan="6" class="filter-empty">Filtre verisi yok.</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var accepted in Groups)
+                                {
+                                    var outcome = (accepted ? variant.Accepted : variant.Rejected)?.FirstOrDefault(x => x.HorizonMinutes == Horizon);
+                                    <tr data-filter="@key" data-group="@(accepted ? "accepted" : "rejected")">
+                                        <th scope="row">@FilterName(key)</th>
+                                        <td>@(accepted ? "Geçen" : "Elenen")</td>
+                                        <td>@(accepted ? variant.AcceptedOpportunityCount : variant.RejectedOpportunityCount)</td>
+                                        @if (outcome is null)
+                                        {
+                                            <td colspan="4" class="filter-empty">Bu süre için ölçüm verisi yok.</td>
+                                        }
+                                        else
+                                        {
+                                            <td>@outcome.Measured / @outcome.Eligible<small>Kapsam: @Rate(outcome.Eligible > 0 ? outcome.CoveragePercent : null)</small></td>
+                                            <td>@outcome.Positive / @outcome.Negative / @outcome.Neutral<small>Yükseliş: @Rate(outcome.Measured > 0 ? outcome.PositiveRatePercent : null)</small></td>
+                                            <td>@Rate(outcome.Measured > 0 ? outcome.AveragePriceChangePercent : null)</td>
+                                            <td class="filter-data">@OutcomeGaps(outcome)<small>Canlı: @outcome.LiveQuoteCount · Karar kaydı: @outcome.RecordedDecisionCount · Belirsiz: @outcome.UnknownProvenanceCount</small></td>
+                                        }
+                                    </tr>
+                                }
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
